@@ -17,14 +17,17 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- Habilitando RLS para profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Profiles são visíveis por todos." ON public.profiles;
 CREATE POLICY "Profiles são visíveis por todos."
     ON public.profiles FOR SELECT
     USING (true);
 
+DROP POLICY IF EXISTS "Usuários podem inserir seu próprio profile." ON public.profiles;
 CREATE POLICY "Usuários podem inserir seu próprio profile."
     ON public.profiles FOR INSERT
     WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Usuários podem atualizar o próprio profile." ON public.profiles;
 CREATE POLICY "Usuários podem atualizar o próprio profile."
     ON public.profiles FOR UPDATE
     USING (auth.uid() = id);
@@ -43,14 +46,17 @@ CREATE TABLE IF NOT EXISTS public.store_settings (
 
 ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Configurações da loja são visíveis publicamente" ON public.store_settings;
 CREATE POLICY "Configurações da loja são visíveis publicamente"
     ON public.store_settings FOR SELECT
     USING (true);
 
+DROP POLICY IF EXISTS "Lojistas podem atualizar sua própria configuração" ON public.store_settings;
 CREATE POLICY "Lojistas podem atualizar sua própria configuração"
     ON public.store_settings FOR UPDATE
     USING (auth.uid() = owner_id);
 
+DROP POLICY IF EXISTS "Lojistas podem inserir sua configuração" ON public.store_settings;
 CREATE POLICY "Lojistas podem inserir sua configuração"
     ON public.store_settings FOR INSERT
     WITH CHECK (auth.uid() = owner_id);

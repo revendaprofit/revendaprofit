@@ -1,0 +1,977 @@
+import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ShoppingCart, CheckCircle, Search, Trash2, ArrowRight, UserPlus, Gift, MapPin, CreditCard, DollarSign, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+
+type Customer = { id: string; name: string; phone?: string };
+type Product = { id: string; name: string; sale_price: number; cost_price: number; image_url: string; product_variants: Variant[]; _is_hub?: boolean; _hub_product_id?: string; _supplier_id?: string; _is_p2p?: boolean; _p2p_partnership_id?: string; _p2p_owner_id?: string; };
+type Variant = { id: string; size: string; color: string; stock: number };
+type CartItem = { 
+  variant_id: string; 
+  product_id: string; 
+  name: string;
+  variant_desc: string;
+  price: number; 
+  cost_price: number;
+  quantity: number; 
+  max_stock: number;
+  _is_hub?: boolean;
+  _hub_product_id?: string;
+  _supplier_id?: string;
+  _is_p2p?: boolean;
+  _p2p_partnership_id?: string;
+  _p2p_owner_id?: string;
+};
+
+export default function POS() {
+  const queryClient = useQueryClient();
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [search, setSearch] = useState('');
+  const [showMixedCartWarning, setShowMixedCartWarning] = useState(false);
+
+  // Fields
+  const [saleOrigin, setSaleOrigin] = useState('');
+  const [cartImportCode, setCartImportCode] = useState('');
+  const [storeOrderId, setStoreOrderId] = useState<string | null>(null);
+  const [consignmentBagId, setConsignmentBagId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const pendingJson = localStorage.getItem('revenda_pos_pending_order');
+    if (pendingJson) {
+      try {
+        const order = JSON.parse(pendingJson);
+        if (order.customers?.id) {
+           setSelectedCustomerId(order.customers.id);
+           setCustomerMode('registered');
+        }
+        if (Array.isArray(order.items)) {
+           setCart(order.items.map((i: any) => {
+              const productId = i.product?.id || '';
+              const isHub = i.product?._is_hub || String(productId).startsWith('hub_');
+              const realId = isHub && String(productId).startsWith('hub_') ? productId.replace('hub_', '') : productId;
+              return {
+               variant_id: i.variant_id,
+               product_id: realId,
+               name: i.product?.name || 'Produto',
+               variant_desc: `${i.variant?.size || ''} ${i.variant?.color ? `- ${i.variant.color}` : ''}`.trim(),
+               price: i.product?.sale_price || 0,
+               cost_price: i.product?.cost_price || 0,
+               quantity: i.qty || 1,
+               max_stock: i.variant?.stock || 99,
+               _is_hub: isHub || false,
+               _hub_product_id: isHub ? (i.product?._hub_product_id || realId) : undefined,
+               _supplier_id: i.product?._supplier_id || undefined
+              };
+           }));
+        }
+        
+        if (order.consignment_bag_id) {
+           setConsignmentBagId(order.consignment_bag_id);
+           setSaleOrigin('Bolsa Consignada');
+        } else {
+           setSaleOrigin('Loja Online');
+        }
+        
+        setStoreOrderId(order.id);
+        toast.info(`Pedido ${order.order_code} importado com sucesso!`);
+        localStorage.removeItem('revenda_pos_pending_order');
+      } catch(e) {
+        console.error("Erro processando pedido do catálogo:", e);
+      }
+    }
+  }, []);
+  
+  const [customerMode, setCustomerMode] = useState<'registered' | 'manual'>('registered');
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [manualCustomer, setManualCustomer] = useState({ name: '', phone: '', instagram: '' });
+  
+  const [payment1Method, setPayment1Method] = useState('');
+  const [payment2Method, setPayment2Method] = useState('');
+  const [payment1Amount, setPayment1Amount] = useState(0);
+  const [payment2Amount, setPayment2Amount] = useState(0);
+  const [hasSecondPayment, setHasSecondPayment] = useState(false);
+  
+  type Installment = { dueDate: string; amount: number; };
+  const [installmentsCount1, setInstallmentsCount1] = useState(1);
+  const [installments1, setInstallments1] = useState<Installment[]>([]);
+  const [installmentsCount2, setInstallmentsCount2] = useState(1);
+  const [installments2, setInstallments2] = useState<Installment[]>([]);
+  
+  const [discountType, setDiscountType] = useState('fixed');
+  const [discountValue, setDiscountValue] = useState(0);
+  
+  const [shippingMethod, setShippingMethod] = useState('presential');
+  const [postalCompany, setPostalCompany] = useState('');
+  const [trackingCode, setTrackingCode] = useState('');
+  const [shippingCost, setShippingCost] = useState(0);
+  const [shippingPayer, setShippingPayer] = useState<'buyer' | 'seller'>('buyer');
+  const [observations, setObservations] = useState('');
+
+  const handleSendTrackingWpp = () => {
+    let phoneStr = '';
+    if (customerMode === 'registered') {
+       const c = customers.find(x => x.id === selectedCustomerId);
+       phoneStr = c?.phone || '';
+    } else {
+       phoneStr = manualCustomer.phone || '';
+    }
+
+    if (!phoneStr) {
+       toast.error("Telefone não encontrado.");
+       return;
+    }
+
+    const text = `Sua compra foi postada!\n📦 Empresa: ${postalCompany}\n🏷️ Rastreio: ${trackingCode}`;
+    const cleanPhone = phoneStr.replace(/\D/g, '');
+    window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customers-pos'],
+    queryFn: async () => {
+      const { data } = await supabase.from('customers').select('id, name, phone').order('name');
+      return (data || []) as Customer[];
+    }
+  });
+
+  const { data: products = [], isLoading: loadingProducts } = useQuery({
+    queryKey: ['products-pos'],
+    queryFn: async () => {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) return [];
+
+      // 1. Produtos locais
+      const { data: localData, error } = await supabase
+        .from('products')
+        .select(`
+          id, name, sale_price, cost_price, image_url,
+          product_variants ( id, size, color, stock )
+        `)
+        .eq('owner_id', user.id)
+        .order('name');
+      
+      if (error) throw error;
+      const localProducts = (localData || []) as Product[];
+
+      // 2. Produtos importados do Hub
+      let hubProducts: Product[] = [];
+      const { data: hubImports } = await supabase
+        .from('hub_imports')
+        .select('hub_product_id, retail_price, supplier_id')
+        .eq('tenant_id', user.id)
+        .eq('is_active', true);
+
+      if (hubImports && hubImports.length > 0) {
+        const hubIds = hubImports.map(i => i.hub_product_id);
+        const { data: hubData } = await supabase
+          .from('hub_products')
+          .select('*, hub_product_variants (*)')
+          .in('id', hubIds)
+          .eq('status', 'active');
+
+        hubProducts = (hubData || []).map((hp: any) => {
+          const imp = hubImports.find(i => i.hub_product_id === hp.id);
+          return {
+            id: hp.id,
+            name: `🏪 ${hp.name}`,
+            sale_price: imp?.retail_price || hp.suggested_retail_price || hp.wholesale_price,
+            cost_price: hp.wholesale_price,
+            image_url: hp.image_url,
+            _is_hub: true,
+            _hub_product_id: hp.id,
+            _supplier_id: imp?.supplier_id || hp.supplier_id,
+            product_variants: (hp.hub_product_variants || []).map((v: any) => ({
+              id: v.id,
+              size: v.size || '',
+              color: v.color || '',
+              stock: v.stock
+            }))
+          } as Product;
+        });
+      }
+
+      // 3. Produtos de Parcerias P2P (Compartilhados comigo)
+      let p2pProducts: Product[] = [];
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_my_p2p_shared_products', { p_tenant_id: user.id });
+      
+      if (!rpcError && rpcData) {
+         p2pProducts = rpcData.map((p: any) => ({
+            id: p.id,
+            name: `🤝 ${p.name}`,
+            sale_price: p.sale_price,
+            cost_price: p.cost_price,
+            image_url: p.image_url,
+            product_variants: p.variants || [],
+            _is_p2p: true,
+            _p2p_partnership_id: p.p2p_partnership_id,
+            _p2p_owner_id: p.p2p_owner_id
+         }));
+      }
+
+      console.log("[DEBUG POS] Local:", localProducts.length, "Hub:", hubProducts.length, "P2P:", p2pProducts.length);
+      console.log("[DEBUG POS] P2P items:", p2pProducts);
+
+      return [...localProducts, ...hubProducts, ...p2pProducts];
+    }
+  });
+
+  const { data: payMethods = [] } = useQuery({
+    queryKey: ['payment-methods-pos'],
+    queryFn: async () => {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) return [];
+      const { data, error } = await supabase.from('payment_methods').select('*').eq('owner_id', user.id).eq('is_active', true).order('created_at');
+      if (error) throw error;
+      
+      let fetchedData = data || [];
+      if (fetchedData.length === 0) {
+          const { data: adminProf } = await supabase.from('profiles').select('id').eq('role', 'admin').limit(1).single();
+          if (adminProf?.id && adminProf.id !== user.id) {
+              const { data: adminMethods } = await supabase.from('payment_methods').select('*').eq('owner_id', adminProf.id).order('created_at');
+              if (adminMethods && adminMethods.length > 0) {
+                  const clones = adminMethods.map(m => ({
+                      owner_id: user.id,
+                      name: m.name,
+                      fee_percentage: m.fee_percentage,
+                      is_installment: m.is_installment,
+                      is_active: m.is_active
+                  }));
+                  await supabase.from('payment_methods').insert(clones);
+                  const { data: newData } = await supabase.from('payment_methods').select('*').eq('owner_id', user.id).eq('is_active', true).order('created_at');
+                  if (newData) fetchedData = newData;
+              }
+          }
+      }
+      return fetchedData;
+    }
+  });
+
+  useEffect(() => {
+    if (payMethods.length > 0) {
+      if (!payment1Method) setPayment1Method(payMethods[0].id);
+      if (!payment2Method) setPayment2Method(payMethods[0].id);
+    }
+  }, [payMethods, payment1Method, payment2Method]);
+
+  const recalculateInstallments = (amount: number, numInst: number, setter: any) => {
+    const list = [];
+    let date = new Date();
+    const baseAmt = Math.floor((amount / numInst) * 100) / 100;
+    const rem = amount - (baseAmt * numInst);
+
+    for (let i = 0; i < numInst; i++) {
+        date = new Date(date.setMonth(date.getMonth() + 1));
+        list.push({
+           dueDate: date.toISOString().split('T')[0],
+           amount: i === 0 ? Number((baseAmt + rem).toFixed(2)) : baseAmt
+        });
+    }
+    setter(list);
+  };
+
+  const subTotal = cart.reduce((acc, c) => acc + (c.price * c.quantity), 0);
+  
+  const getActualDiscount = () => {
+    if (discountType === 'percentage') return subTotal * (discountValue / 100);
+    return discountValue;
+  };
+  
+  const actualDiscount = getActualDiscount();
+  const applyShippingToTotal = (shippingMethod !== 'presential' && shippingPayer === 'buyer') ? shippingCost : 0;
+  const grandTotal = Math.max(0, subTotal - actualDiscount + applyShippingToTotal);
+
+  // Sincronizar o payment1 com o grandTotal caso o total mude (por causa do carrinho ou desconto)
+  useEffect(() => {
+    if (!hasSecondPayment) {
+      setPayment1Amount(grandTotal);
+      setPayment2Amount(0);
+      recalculateInstallments(grandTotal, installmentsCount1, setInstallments1);
+    } else {
+      if (Math.abs(payment1Amount + payment2Amount - grandTotal) > 0.01) {
+        setPayment1Amount(Math.max(0, grandTotal - payment2Amount));
+      }
+    }
+  }, [grandTotal, hasSecondPayment]);
+
+  const handleP1AmountChange = (val: number) => {
+    const v = Math.max(0, val);
+
+    setPayment1Amount(v);
+    if (hasSecondPayment) {
+      setPayment2Amount(Math.max(0, grandTotal - v));
+    }
+  };
+
+  const handleP2AmountChange = (val: number) => {
+    const v = Math.max(0, val);
+    setPayment2Amount(v);
+    if (hasSecondPayment) {
+      setPayment1Amount(Math.max(0, grandTotal - v));
+    }
+  };
+
+  const checkoutMutation = useMutation({
+    mutationFn: async () => {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) throw new Error("Não autenticado");
+
+      // Registrar cliente se manual
+      let customer_id = customerMode === 'registered' ? selectedCustomerId : null;
+      if (customerMode === 'manual' && manualCustomer.name) {
+        const { data, error } = await supabase.from('customers').insert([{
+          name: manualCustomer.name,
+          phone: manualCustomer.phone,
+          instagram: manualCustomer.instagram,
+          owner_id: user.id
+        }]).select('id').single();
+        if (error) throw error;
+        customer_id = data.id;
+      }
+
+      // Validar origin
+      if (!saleOrigin) throw new Error("Selecione a origem da venda");
+      if (cart.length === 0) throw new Error("Carrinho vazio");
+      if (!payment1Method) throw new Error("Selecione uma Forma de Pagamento. (Caso não possua, configure na aba Ajustes/Pagamentos).");
+
+      const pm1 = payMethods.find((p:any) => p.id === payment1Method);
+      const pm2 = hasSecondPayment && payment2Method ? payMethods.find((p:any) => p.id === payment2Method) : null;
+      const hasInstallments = (pm1?.is_installment && installments1.length > 0) || (pm2?.is_installment && installments2.length > 0);
+
+      // Separar logicamente o carrinho para Split
+      const localAndHubItems = cart.filter(c => !c._is_p2p);
+      const p2pItems = cart.filter(c => c._is_p2p);
+      
+      const orderGroups = [];
+      if (localAndHubItems.length > 0) {
+          orderGroups.push({ type: 'main', items: localAndHubItems, status: hasInstallments ? 'installment' : 'completed' });
+      }
+      if (p2pItems.length > 0) {
+          orderGroups.push({ type: 'p2p', items: p2pItems, status: 'open' });
+      }
+
+      const totalCartValue = cart.reduce((acc, c) => acc + (c.price * c.quantity), 0);
+      let firstSaleId = null;
+
+      for (const group of orderGroups) {
+          const groupSubtotal = group.items.reduce((acc, c) => acc + (c.price * c.quantity), 0);
+          const ratio = totalCartValue > 0 ? groupSubtotal / totalCartValue : 0;
+
+          const gTotalVal = grandTotal * ratio;
+          const gDiscount = actualDiscount * ratio;
+          const gShipping = shippingCost * ratio;
+          const gPayment2Am = hasSecondPayment && payment2Amount ? payment2Amount * ratio : null;
+
+          // Inserir venda
+          const { data: sale, error } = await supabase.from('sales').insert([{
+            owner_id: user.id,
+            total_amount: gTotalVal,
+            discount: gDiscount,
+            payment_method: payment1Method || null,
+            payment_method_2: (hasSecondPayment && payment2Method) ? payment2Method : null,
+            payment_amount_2: gPayment2Am,
+            status: group.status,
+            sale_origin: saleOrigin,
+            shipping_method: shippingMethod,
+            shipping_cost: gShipping,
+            shipping_payer: shippingPayer,
+            discount_type: discountType,
+            customer_id: customer_id || null
+          }]).select('id').single();
+
+          if (error) throw error;
+          if (!firstSaleId) firstSaleId = sale.id;
+
+          // Itens da Venda
+          const saleItemsData = group.items.map(c => ({
+            owner_id: user.id,
+            sale_id: sale.id,
+            product_id: c.product_id,
+            variant_id: c.variant_id,
+            quantity: c.quantity,
+            unit_price: c.price,
+            unit_cost: c.cost_price,
+            total_price: c.price * c.quantity
+          }));
+          const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsData);
+          if (itemsError) throw itemsError;
+
+          // Itens Hub: criar fulfillment orders
+          const groupHubItems = group.items.filter(c => c._is_hub);
+          for (const hubItem of groupHubItems) {
+            const customerName = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.name || 'Cliente') : (manualCustomer.name || 'Cliente');
+            const customerPhone = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.phone || '') : (manualCustomer.phone || '');
+            const { error: fulfillErr } = await supabase.from('hub_fulfillment_orders').insert({
+              hub_product_id: hubItem._hub_product_id,
+              hub_variant_id: hubItem.variant_id,
+              supplier_id: hubItem._supplier_id,
+              tenant_id: user.id,
+              quantity: hubItem.quantity,
+              status: 'pending',
+              customer_name: customerName,
+              customer_phone: customerPhone,
+              customer_address: observations || null
+            });
+            if (fulfillErr) toast.error(`Erro envio hub: ${hubItem.name}`);
+          }
+
+          // Itens P2P: criar orders e settlements
+          const groupP2PItems = group.items.filter(c => c._is_p2p);
+          if (groupP2PItems.length > 0) {
+              const pIds = [...new Set(groupP2PItems.map(c => c._p2p_partnership_id).filter(Boolean))];
+              const { data: activePartnerships } = await supabase.from('partnerships').select('*').in('id', pIds as string[]);
+
+              for (const p2pItem of groupP2PItems) {
+                 const contract = activePartnerships?.find(p => p.id === p2pItem._p2p_partnership_id);
+                 if (!contract) continue;
+
+                 const { data: pOrder, error: pOrderErr } = await supabase.from('partnership_orders').insert({
+                    partnership_id: contract.id,
+                    seller_id: user.id,
+                    owner_id: p2pItem._p2p_owner_id,
+                    product_id: p2pItem.product_id,
+                    variant_id: p2pItem.variant_id,
+                    sale_id: sale.id,
+                    quantity: p2pItem.quantity,
+                    sale_price: p2pItem.price,
+                    status: 'pending_confirmation'
+                 }).select('id').single();
+
+                 if (!pOrderErr && pOrder) {
+                    const customCostPerc = parseFloat(contract.cost_recovery_owner_percent) / 100;
+                    let costSliceOwner = 0;
+                    if (contract.cost_recovery_type === 'owner_100') costSliceOwner = p2pItem.cost_price;
+                    else if (contract.cost_recovery_type === 'shared_50_50') costSliceOwner = p2pItem.cost_price * 0.5;
+                    else if (contract.cost_recovery_type === 'custom') costSliceOwner = p2pItem.cost_price * customCostPerc;
+                    
+                    const lucro = Math.max(0, p2pItem.price - p2pItem.cost_price);
+                    const profitSliceOwner = lucro * (parseFloat(contract.profit_split_partner_percent) / 100);
+                    const totalOwedToOwner = (costSliceOwner + profitSliceOwner) * p2pItem.quantity;
+                    
+                    await supabase.from('partnership_settlements').insert({
+                       partnership_id: contract.id,
+                       partnership_order_id: pOrder.id,
+                       debtor_id: user.id,
+                       creditor_id: p2pItem._p2p_owner_id,
+                       cost_slice: costSliceOwner * p2pItem.quantity,
+                       profit_slice: profitSliceOwner * p2pItem.quantity,
+                       amount_owed: totalOwedToOwner,
+                       status: 'open'
+                    });
+                 }
+              }
+          }
+
+          // Parcelas rateadas
+          if (pm1?.is_installment && installments1.length > 0) {
+            const instsToInsert = installments1.map((inst, index) => ({
+                sale_id: sale.id,
+                installment_number: index + 1,
+                due_date: inst.dueDate,
+                amount: inst.amount * ratio,
+                status: 'pending'
+            }));
+            await supabase.from('sale_installments').insert(instsToInsert);
+          }
+          if (hasSecondPayment && pm2?.is_installment && installments2.length > 0) {
+            const instsToInsert = installments2.map((inst, index) => ({
+                sale_id: sale.id,
+                installment_number: index + 1,
+                due_date: inst.dueDate,
+                amount: inst.amount * ratio,
+                status: 'pending'
+            }));
+            await supabase.from('sale_installments').insert(instsToInsert);
+          }
+      }
+
+      if (storeOrderId) {
+         await supabase.from('store_orders').update({ status: 'completed' }).eq('id', storeOrderId);
+      }
+
+      if (consignmentBagId) {
+         await supabase.from('consignment_bags').update({ status: 'concluded' }).eq('id', consignmentBagId);
+      }
+
+      return firstSaleId;
+    },
+    onSuccess: () => {
+      toast.success('Venda concluída com sucesso!');
+      setCart([]);
+      setObservations('');
+      setManualCustomer({ name: '', phone: '', instagram: '' });
+      setSelectedCustomerId('');
+      setSearch('');
+      setStoreOrderId(null);
+      setConsignmentBagId(null);
+      queryClient.invalidateQueries({ queryKey: ['products-pos'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-history'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+    },
+    onError: (e: any) => {
+      toast.error('Erro ao registrar venda: ' + e.message);
+    }
+  });
+
+  const addToCart = (product: Product, variant: Variant) => {
+    const existing = cart.find(c => c.variant_id === variant.id);
+    if (existing) {
+       if (existing.quantity >= variant.stock) { toast.error('Estoque insuficiente'); return; }
+       setCart(cart.map(c => c.variant_id === variant.id ? { ...c, quantity: c.quantity + 1 } : c));
+    } else {
+       setCart([...cart, {
+           variant_id: variant.id,
+           product_id: product.id,
+           name: product.name,
+           variant_desc: `${variant.size} ${variant.color}`,
+           price: product.sale_price,
+           cost_price: product.cost_price || 0,
+           quantity: 1,
+           max_stock: variant.stock,
+           _is_hub: product._is_hub,
+           _hub_product_id: product._hub_product_id,
+           _supplier_id: product._supplier_id,
+           _is_p2p: product._is_p2p,
+           _p2p_partnership_id: product._p2p_partnership_id,
+           _p2p_owner_id: product._p2p_owner_id
+       }]);
+    }
+  };
+
+  const removeFromCart = (variant_id: string) => setCart(cart.filter(c => c.variant_id !== variant_id));
+
+  const updateQuantity = (variant_id: string, newQ: number, max: number) => {
+    if (newQ <= 0) return removeFromCart(variant_id);
+    if (newQ > max) return toast.error("Estoque insuficiente.");
+    setCart(cart.map(c => c.variant_id === variant_id ? { ...c, quantity: newQ } : c));
+  };
+
+  const handleValidationBeforeCheckout = () => {
+     if (cart.length === 0) return toast.error("Carrinho vazio");
+     const hasLocal = cart.some(c => !c._is_p2p);
+     const hasP2p = cart.some(c => c._is_p2p);
+     
+     if (hasLocal && hasP2p) {
+        setShowMixedCartWarning(true);
+        return;
+     }
+     
+     checkoutMutation.mutate();
+  };
+
+  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const totalItems = cart.reduce((acc, c) => acc + c.quantity, 0);
+
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8 flex justify-center items-start">
+      <div className="w-full max-w-5xl bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden flex flex-col relative z-0">
+        
+        {/* Header - Importar */}
+        <div className="p-4 md:p-8 border-b bg-slate-50/80">
+          <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center mb-4">
+            <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+               <ShoppingCart className="w-6 h-6 text-primary" />
+               Registrar Venda
+            </h2>
+          </div>
+          <div className="flex gap-2 w-full">
+            <div className="relative flex-1">
+               <span className="absolute left-3 top-3.5 text-primary font-bold w-4 h-4"><ArrowRight className="w-4 h-4"/></span>
+               <Input placeholder="Importar carrinho (ex: VP-ASF2)..." className="pl-9 h-12 rounded-xl border-slate-200 focus-visible:ring-primary bg-white shadow-sm font-medium" value={cartImportCode} onChange={e => setCartImportCode(e.target.value)} />
+            </div>
+            <Button variant="outline" className="h-12 shrink-0 px-8 rounded-xl border-slate-200 hover:bg-slate-100 font-bold" onClick={() => toast.info('Integração em breve')}>Importar</Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-4 md:p-6">
+          
+          {/* Lado Esquerdo - Busca e Carrinho */}
+          <div className="flex flex-col gap-5">
+            <div className="relative">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 block">Buscar Produto</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
+                <Input placeholder="Digite o nome do produto..." className="pl-10 h-12 rounded-xl border-slate-200 focus:ring-primary shadow-sm text-sm" value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+              
+              {/* Resultados da Busca (Flutuante) */}
+              {search.length > 0 && (
+                <div className="absolute top-16 left-0 right-0 z-50 bg-white border border-gray-200 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+                   {filteredProducts.length === 0 ? (
+                     <div className="p-4 text-sm text-center text-gray-500">Nenhum produto encontrado.</div>
+                   ) : (
+                     filteredProducts.map(p => {
+                        const av = p.product_variants?.filter(v => v.stock > 0) || [];
+                        return (
+                           <div key={p.id} className="p-3 border-b flex flex-col gap-2 hover:bg-gray-50">
+                              <p className="font-semibold text-sm text-gray-900">{p.name}</p>
+                              <div className="flex flex-wrap gap-2">
+                                 {av.length > 0 ? av.map(v => (
+                                   <Button key={v.id} variant="outline" size="sm" className="h-7 text-xs border-primary/30 hover:border-primary hover:bg-primary/5 px-2" onClick={() => {addToCart(p,v); setSearch('');}}>
+                                      {v.size} {v.color && `- ${v.color}`}
+                                   </Button>
+                                 )) : <span className="text-[10px] text-red-500 border border-red-100 bg-red-50 px-2 py-1 rounded">Sem estoque</span>}
+                              </div>
+                           </div>
+                        )
+                     })
+                   )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 flex flex-col min-h-[350px]">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 block">Carrinho ({totalItems} itens)</label>
+              <div className="flex-1 border border-slate-200 rounded-2xl overflow-y-auto p-4 bg-slate-50/50 custom-scrollbar relative shadow-inner">
+                 {cart.length === 0 ? (
+                   <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                     <ShoppingCart className="h-12 w-12 mb-3 text-slate-200" />
+                     <p className="text-sm font-medium text-slate-500">Carrinho vazio</p>
+                     <p className="text-xs mt-1 text-slate-400">Adicione produtos para continuar</p>
+                   </div>
+                 ) : (
+                   <div className="space-y-3">
+                     {cart.map(c => (
+                       <div key={c.variant_id} className="bg-white p-3 py-2 rounded-lg border border-gray-200 shadow-sm text-sm flex gap-3 relative">
+                         <div className="flex-1 pr-6">
+                            <p className="font-bold text-gray-900">{c.name}</p>
+                            <p className="text-[11px] text-gray-500 mt-0.5">{c.variant_desc}</p>
+                            <div className="flex items-center justify-between mt-2">
+                               <p className="font-black text-emerald-600">R$ {(c.price * c.quantity).toFixed(2)}</p>
+                               <div className="flex items-center border border-gray-200 rounded-md">
+                                 <button className="px-2.5 py-1 text-gray-600 hover:bg-gray-100" onClick={() => updateQuantity(c.variant_id, c.quantity - 1, c.max_stock)}>-</button>
+                                 <span className="w-5 text-center text-xs font-bold border-x border-gray-200 py-1">{c.quantity}</span>
+                                 <button className="px-2.5 py-1 text-gray-600 hover:bg-gray-100" onClick={() => updateQuantity(c.variant_id, c.quantity + 1, c.max_stock)}>+</button>
+                               </div>
+                            </div>
+                         </div>
+                         <button className="absolute top-2 right-2 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" onClick={() => removeFromCart(c.variant_id)}><Trash2 className="h-4 w-4"/></button>
+                       </div>
+                     ))}
+                   </div>
+                 )}
+              </div>
+            </div>
+            
+          </div>
+
+          {/* Lado Direito - Checkout Form */}
+          <div className="flex flex-col gap-6 pl-0 md:pl-6 md:border-l border-slate-100">
+             
+             <div>
+                <label className="text-[10px] font-black text-primary uppercase tracking-wider mb-2 block">Origem da Venda *</label>
+                <select className="w-full h-12 border border-primary/20 text-sm rounded-xl px-4 bg-primary/5 cursor-pointer outline-none focus:ring-2 focus:ring-primary focus:border-primary text-slate-900 font-semibold transition-all shadow-sm" value={saleOrigin} onChange={e => setSaleOrigin(e.target.value)}>
+                   <option value="">Selecione a origem...</option>
+                   <option value="Loja Online">Loja Online</option>
+                   <option value="Evento">Evento</option>
+                   <option value="Bolsa Consignada">Bolsa Consignada</option>
+                   <option value="Consórcio">Consórcio</option>
+                   <option value="Bazar VIP">Bazar VIP</option>
+                   <option value="Ponto Parceiro">Ponto Parceiro</option>
+                   <option value="Loja Física">Loja Física</option>
+                </select>
+                {!saleOrigin && <p className="text-[10px] text-primary mt-1 font-medium">Selecione a origem da venda para continuar</p>}
+             </div>
+
+             <div className="space-y-4">
+               <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 block">Cliente</label>
+                  <select className="w-full h-12 border border-slate-200 text-sm rounded-xl px-4 bg-white outline-none focus:border-primary focus:ring-2 focus:ring-primary shadow-sm font-medium" value={customerMode === 'manual' ? '' : selectedCustomerId} onChange={e => {
+                     if (!e.target.value) setCustomerMode('manual');
+                     else { setCustomerMode('registered'); setSelectedCustomerId(e.target.value); }
+                  }}>
+                     <option value="">Digitar manualmente</option>
+                     {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+               </div>
+
+               {customerMode === 'manual' && (
+                  <>
+                    <div>
+                      <label className="text-xs font-bold text-gray-700 mb-1.5 block">Nome do Cliente</label>
+                      <Input placeholder="Opcional" className="h-10 border-gray-200" value={manualCustomer.name} onChange={e => setManualCustomer({...manualCustomer, name: e.target.value})}/>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-gray-700 mb-1.5 block">Telefone</label>
+                        <Input placeholder="(00) 00000-0000" className="h-10 border-gray-200" value={manualCustomer.phone} onChange={e => setManualCustomer({...manualCustomer, phone: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-gray-700 mb-1.5 block">@ Instagram</label>
+                        <Input placeholder="@usuario" className="h-10 border-gray-200" value={manualCustomer.instagram} onChange={e => setManualCustomer({...manualCustomer, instagram: e.target.value})} />
+                      </div>
+                    </div>
+                  </>
+               )}
+             </div>
+
+             <div className="pt-2">
+                <div className="flex justify-between items-end mb-2">
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Forma de Pagamento</label>
+                   {!hasSecondPayment && payMethods.length > 1 && <button className="text-[10px] text-primary font-bold hover:underline" onClick={() => setHasSecondPayment(true)}>+ Dividir pagamento</button>}
+                </div>
+                
+                <div className="space-y-2 mb-2">
+                   <div className={`flex gap-2 ${hasSecondPayment ? 'items-center' : ''}`}>
+                     <select className="w-full h-12 border border-slate-200 text-sm rounded-xl px-4 bg-white outline-none focus:border-primary focus:ring-2 focus:ring-primary shadow-sm font-medium flex-1" value={payment1Method} onChange={e => {
+                           setPayment1Method(e.target.value);
+                           const pm = payMethods.find((p:any) => p.id === e.target.value);
+                           if (pm?.is_installment) recalculateInstallments(payment1Amount, installmentsCount1, setInstallments1);
+                     }}>
+                       {payMethods.length === 0 ? <option value="">Configure em Ajustes</option> : payMethods.map((pm:any) => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+                     </select>
+                     {hasSecondPayment && (
+                       <Input type="number" placeholder="0,00" value={parseFloat(payment1Amount.toFixed(2)) || ''} onChange={e => handleP1AmountChange(parseFloat(e.target.value) || 0)} className="w-24 h-10 font-bold" />
+                     )}
+                   </div>
+                      
+                   {(() => {
+                      const pm = payMethods.find((p:any) => p.id === payment1Method);
+                      if (pm?.is_installment) {
+                        return (
+                           <div className="p-3 bg-gray-50 border border-dashed border-gray-300 rounded-lg space-y-2">
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs font-semibold text-gray-600">Qtd Parcelas:</label>
+                                <Input type="number" min={1} className="w-16 h-8 text-xs bg-white" value={installmentsCount1} onChange={e => {
+                                    const c = parseInt(e.target.value) || 1;
+                                    setInstallmentsCount1(c);
+                                    recalculateInstallments(payment1Amount, c, setInstallments1);
+                                }} />
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 mt-2">
+                                {installments1.map((inst, i) => (
+                                  <div key={i} className="flex gap-1 items-center bg-white p-1 rounded border border-gray-200">
+                                    <span className="w-4 text-center font-bold text-[10px] text-gray-500">{i+1}</span>
+                                    <Input type="date" className="h-6 text-[10px] px-1 border-gray-100 flex-1" value={inst.dueDate} onChange={e => { const newInsts = [...installments1]; newInsts[i].dueDate = e.target.value; setInstallments1(newInsts); }} />
+                                    <Input type="number" step="0.01" className="h-6 text-[10px] px-1 border-gray-100 w-14 font-medium" value={inst.amount} onChange={e => { const newInsts = [...installments1]; newInsts[i].amount = parseFloat(e.target.value) || 0; setInstallments1(newInsts); }} />
+                                  </div>
+                                ))}
+                              </div>
+                           </div>
+                        )
+                      }
+                   })()}
+                </div>
+
+                {hasSecondPayment && (
+                  <div className="space-y-2 pt-2 border-t border-gray-100 mt-2">
+                     <div className="flex gap-2 items-center">
+                       <select className="w-full h-10 border border-gray-200 text-sm rounded-md px-3 bg-white outline-none focus:border-primary flex-1" value={payment2Method} onChange={e => {
+                             setPayment2Method(e.target.value);
+                             const pm = payMethods.find((p:any) => p.id === e.target.value);
+                             if (pm?.is_installment) recalculateInstallments(payment2Amount, installmentsCount2, setInstallments2);
+                       }}>
+                         {payMethods.map((pm:any) => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
+                       </select>
+                       <Input type="number" placeholder="0,00" value={parseFloat(payment2Amount.toFixed(2)) || ''} onChange={e => handleP2AmountChange(parseFloat(e.target.value) || 0)} className="w-24 h-10 font-bold" />
+                       <button className="text-gray-400 hover:text-red-500 p-2" onClick={() => {setHasSecondPayment(false); setPayment2Amount(0);}}><Trash2 className="h-4 w-4" /></button>
+                     </div>
+                        
+                     {(() => {
+                        const pm = payMethods.find((p:any) => p.id === payment2Method);
+                        if (pm?.is_installment) {
+                          return (
+                             <div className="p-3 bg-gray-50 border border-dashed border-gray-300 rounded-lg space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs font-semibold text-gray-600">Qtd Parcelas (Pag. 2):</label>
+                                  <Input type="number" min={1} className="w-16 h-8 text-xs bg-white" value={installmentsCount2} onChange={e => {
+                                      const c = parseInt(e.target.value) || 1;
+                                      setInstallmentsCount2(c);
+                                      recalculateInstallments(payment2Amount, c, setInstallments2);
+                                  }} />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                  {installments2.map((inst, i) => (
+                                    <div key={i} className="flex gap-1 items-center bg-white p-1 rounded border border-gray-200">
+                                      <span className="w-4 text-center font-bold text-[10px] text-gray-500">{i+1}</span>
+                                      <Input type="date" className="h-6 text-[10px] px-1 border-gray-100 flex-1" value={inst.dueDate} onChange={e => { const newInsts = [...installments2]; newInsts[i].dueDate = e.target.value; setInstallments2(newInsts); }} />
+                                      <Input type="number" step="0.01" className="h-6 text-[10px] px-1 border-gray-100 w-14 font-medium" value={inst.amount} onChange={e => { const newInsts = [...installments2]; newInsts[i].amount = parseFloat(e.target.value) || 0; setInstallments2(newInsts); }} />
+                                    </div>
+                                  ))}
+                                </div>
+                             </div>
+                          )
+                        }
+                     })()}
+                  </div>
+                )}
+             </div>
+
+             <div className="grid grid-cols-2 gap-4">
+                <div>
+                   <label className="text-xs font-bold text-gray-700 mb-1.5 block">Tipo de Desconto</label>
+                   <select className="w-full h-10 border border-gray-200 text-sm rounded-md px-3 bg-white outline-none focus:border-primary" value={discountType} onChange={e => setDiscountType(e.target.value)}>
+                     <option value="fixed">R$ Fixo</option>
+                     <option value="percentage">% Porcentagem</option>
+                     <option value="exchange">⟲ Permuta</option>
+                   </select>
+                </div>
+                <div>
+                   <label className="text-xs font-bold text-gray-700 mb-1.5 block">Valor do Desconto</label>
+                   <Input type="number" placeholder="0" className="h-10 border-gray-200 font-bold" value={discountValue || ''} onChange={e => setDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))} />
+                </div>
+             </div>
+
+             <div>
+                <label className="text-xs font-bold text-gray-700 mb-1.5 block">Forma de Envio</label>
+                <div className="grid grid-cols-2 gap-3">
+                   {[
+                     { id: 'presential', label: 'Presencial', desc: 'Entrega em mãos' },
+                     { id: 'postal', label: 'Postagem', desc: 'Correios, Jadlog, etc' },
+                     { id: 'app', label: 'Aplicativos', desc: 'Uber, 99, etc' },
+                     { id: 'other', label: 'Outras', desc: 'Outra forma de envio' }
+                   ].map(env => (
+                     <div 
+                       key={env.id}
+                       className={`border rounded-lg p-3 cursor-pointer transition-all ${shippingMethod === env.id ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary/30' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+                       onClick={() => setShippingMethod(env.id)}
+                     >
+                       <div className="font-bold text-sm mb-0.5">{env.label}</div>
+                       <div className={`text-[10px] ${shippingMethod === env.id ? 'text-primary/70' : 'text-gray-500'}`}>{env.desc}</div>
+                     </div>
+                   ))}
+                </div>
+
+                {shippingMethod === 'postal' && (
+                  <div className="mt-4 space-y-4 p-4 border border-dashed border-gray-300 bg-gray-50 rounded-lg">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-700 uppercase mb-1 block">Empresa de Envios</label>
+                        <Input placeholder="Ex: Correios" className="h-9 bg-white text-sm" value={postalCompany} onChange={e => setPostalCompany(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-700 uppercase mb-1 block">Código de Rastreio</label>
+                        <Input placeholder="Código..." className="h-9 bg-white text-sm" value={trackingCode} onChange={e => setTrackingCode(e.target.value)} />
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" className="w-full h-9 font-semibold text-green-700 border-green-200 hover:bg-green-50" onClick={handleSendTrackingWpp} disabled={!trackingCode || !postalCompany}>
+                         Avisar envio no WhatsApp
+                    </Button>
+                  </div>
+                )}
+                {(shippingMethod === 'app' || shippingMethod === 'other') && (
+                  <div className="mt-4 p-4 border border-dashed border-gray-300 bg-gray-50 rounded-lg">
+                    <label className="text-[10px] font-bold text-gray-700 uppercase mb-1 block">{shippingMethod === 'app' ? 'Qual Aplicativo?' : 'Tipo de Envio'}</label>
+                    <Input placeholder={shippingMethod === 'app' ? "Ex: Uber Moto..." : "Especifique..."} className="h-9 bg-white text-sm" value={postalCompany} onChange={e => setPostalCompany(e.target.value)} />
+                  </div>
+                )}
+
+                {/* Custos de Envio se não for presencial */}
+                {shippingMethod !== 'presential' && (
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-700 uppercase mb-1 block">Custo de Envio (R$)</label>
+                      <Input type="number" placeholder="0,00" className="h-9 bg-white text-sm font-bold" value={shippingCost || ''} onChange={e => setShippingCost(parseFloat(e.target.value) || 0)} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-700 uppercase mb-1 block">Quem Paga?</label>
+                      <select className="w-full h-9 border border-gray-200 text-sm rounded-md px-2 bg-white" value={shippingPayer} onChange={e => setShippingPayer(e.target.value as 'buyer'|'seller')}>
+                        <option value="buyer">Comprador</option>
+                        <option value="seller">Vendedor</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+             </div>
+
+             <div>
+                <label className="text-xs font-bold text-gray-700 mb-1.5 block">Endereço de Entrega (Opcional)</label>
+                <textarea 
+                  className="w-full min-h-[80px] border border-gray-200 rounded-md p-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-gray-400"
+                  placeholder="Endereço completo de entrega..."
+                  value={observations}
+                  onChange={e => setObservations(e.target.value)}
+                />
+             </div>
+
+          </div>
+        </div>
+
+        {/* Rodapé - Totais e Confirmar */}
+        <div className="bg-slate-900 border-t border-slate-800 p-5 md:px-8 md:py-6 flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+            <div className="flex gap-6 w-full md:w-auto overflow-x-auto text-white">
+               <div className="flex flex-col">
+                  <span className="text-slate-400 text-[10px] font-black uppercase tracking-wider">Subtotal</span>
+                  <span className="font-bold text-lg">R$ {subTotal.toFixed(2)}</span>
+               </div>
+               
+               {applyShippingToTotal > 0 && (
+                 <div className="flex flex-col">
+                    <span className="text-slate-400 text-[10px] font-black uppercase tracking-wider">Frete Extra</span>
+                    <span className="font-bold text-lg text-slate-300">+ R$ {applyShippingToTotal.toFixed(2)}</span>
+                 </div>
+               )}
+
+               {actualDiscount > 0 && (
+                 <div className="flex flex-col">
+                    <span className="text-slate-400 text-[10px] font-black uppercase tracking-wider">Descontos</span>
+                    <span className="font-bold text-lg text-primary">- R$ {actualDiscount.toFixed(2)}</span>
+                 </div>
+               )}
+            </div>
+            
+            <div className="flex items-center gap-6 w-full md:w-auto shrink-0 justify-between md:justify-end">
+               <div className="flex flex-col items-start md:items-end">
+                  <span className="text-slate-400 text-[10px] font-black uppercase tracking-wider mb-0.5">Total a Receber</span>
+                  <span className="text-3xl font-black text-white">R$ {grandTotal.toFixed(2)}</span>
+               </div>
+               
+               <Button 
+                className="h-14 px-8 text-lg font-black bg-primary hover:bg-primary/90 text-white rounded-2xl shadow-lg shadow-primary/20 border-none transition-all hover:scale-105 active:scale-95" 
+                onClick={handleValidationBeforeCheckout}
+                disabled={cart.length === 0 || checkoutMutation.isPending || !saleOrigin}
+               >
+                 {checkoutMutation.isPending ? 'Processando...' : (
+                   <div className="flex items-center gap-2">
+                     <CheckCircle className="h-6 w-6" /> 
+                     <span>Finalizar</span>
+                   </div>
+                 )}
+               </Button>
+            </div>
+        </div>
+
+        {/* Dialog Customizado de Carrinho Misto */}
+        <Dialog open={showMixedCartWarning} onOpenChange={setShowMixedCartWarning}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-yellow-600 font-bold mb-2">
+                 <AlertTriangle className="h-6 w-6" />
+                 Atenção: Carrinho Misto
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 text-sm text-slate-700 bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-inner">
+              <p>
+                Seu carrinho possui <strong>produtos da sua loja</strong> misturados com <strong>produtos enviados de parceiras</strong> (P2P).
+              </p>
+              <p>
+                Para que seu caixa funcione de forma independente, o sistema irá automaticamente dividir esta transação em <strong>DOIS RECIBOS DIFERENTES</strong> lá no seu Histórico de Vendas.
+              </p>
+              <ul className="list-disc pl-5 space-y-2 text-[13px] font-medium text-slate-600">
+                 <li>O seu recibo (local) nascerá imediatamente como <span className="text-emerald-700 font-bold">Concluído</span>.</li>
+                 <li>O recibo da parceira nascerá temporariamente <span className="text-yellow-700 font-bold">Em Aberto</span> aguardando ela despachar/liberar.</li>
+              </ul>
+            </div>
+            <DialogFooter className="mt-2 flex gap-2">
+              <Button variant="outline" className="flex-1 border-slate-300" onClick={() => setShowMixedCartWarning(false)}>
+                 Cancelar
+              </Button>
+              <Button className="flex-1 bg-yellow-500 hover:bg-yellow-600 font-bold text-white shadow-md shadow-yellow-500/20" onClick={() => {
+                 setShowMixedCartWarning(false);
+                 checkoutMutation.mutate();
+              }}>
+                 Ok, Finalizar Venda!
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+      </div>
+    </div>
+  );
+
+}

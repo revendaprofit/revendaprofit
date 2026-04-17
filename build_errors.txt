@@ -1,0 +1,97 @@
+
+> revenda-profit@0.0.0 build
+> tsc -b && vite build
+
+src/pages/POS.tsx(82,6): error TS17008: JSX element 'div' has no corresponding closing tag.
+src/pages/POS.tsx(83,8): error TS17008: JSX element 'div' has no corresponding closing tag.
+src/pages/POS.tsx(99,10): error TS17008: JSX element 'div' has no corresponding closing tag.
+src/pages/POS.tsx(102,12): error TS17008: JSX element 'div' has no corresponding closing tag.
+src/pages/POS.tsx(136,14): error TS17008: JSX element 'div' has no corresponding closing tag.
+src/pages/POS.tsx(138,16): error TS17008: JSX element 'div' has no corresponding closing tag.
+src/pages/POS.tsx(145,21): error TS17008: JSX element 'div' has no corresponding closing tag.
+src/pages/POS.tsx(162,5): error TS1005: ')' expected.
+src/pages/POS.tsx(162,25): error TS1005: ')' expected.
+src/pages/POS.tsx(164,53): error TS1005: '}' expected.
+src/pages/POS.tsx(165,5): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(166,3): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(168,47): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(169,5): error TS1109: Expression expected.
+src/pages/POS.tsx(172,53): error TS1005: '}' expected.
+src/pages/POS.tsx(173,5): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(174,3): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(177,15): error TS1005: '}' expected.
+src/pages/POS.tsx(177,27): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(179,11): error TS1005: '}' expected.
+src/pages/POS.tsx(181,9): error TS1109: Expression expected.
+src/pages/POS.tsx(182,15): error TS1005: '}' expected.
+src/pages/POS.tsx(185,9): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(188,7): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(195,19): error TS1005: '}' expected.
+src/pages/POS.tsx(195,33): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(196,21): error TS1005: '}' expected.
+src/pages/POS.tsx(208,7): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(213,37): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(214,16): error TS1005: '}' expected.
+src/pages/POS.tsx(221,7): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(223,20): error TS1005: '}' expected.
+src/pages/POS.tsx(223,33): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(227,44): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(228,55): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(229,9): error TS1109: Expression expected.
+src/pages/POS.tsx(229,55): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(230,20): error TS1005: '}' expected.
+src/pages/POS.tsx(234,9): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(236,7): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(239,9): error TS1109: Expression expected.
+src/pages/POS.tsx(239,46): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(240,57): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(241,11): error TS1109: Expression expected.
+src/pages/POS.tsx(241,57): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(242,22): error TS1005: '}' expected.
+src/pages/POS.tsx(246,11): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(248,9): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(249,7): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(252,5): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(253,20): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(254,52): error TS1005: '}' expected.
+src/pages/POS.tsx(257,31): error TS1005: '}' expected.
+src/pages/POS.tsx(257,62): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(260,47): error TS1005: '}' expected.
+src/pages/POS.tsx(260,66): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(261,47): error TS1005: '}' expected.
+src/pages/POS.tsx(261,67): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(262,47): error TS1005: '}' expected.
+src/pages/POS.tsx(262,71): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(263,5): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(264,24): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(265,59): error TS1005: '}' expected.
+src/pages/POS.tsx(266,5): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(267,3): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(269,59): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(270,5): error TS1109: Expression expected.
+src/pages/POS.tsx(270,35): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(272,8): error TS1109: Expression expected.
+src/pages/POS.tsx(272,30): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(272,85): error TS1005: '}' expected.
+src/pages/POS.tsx(272,95): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(273,28): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(273,76): error TS1005: '}' expected.
+src/pages/POS.tsx(273,93): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(274,5): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(284,11): error TS1005: '}' expected.
+src/pages/POS.tsx(285,5): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(286,3): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(288,48): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(288,73): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(290,75): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(291,5): error TS1109: Expression expected.
+src/pages/POS.tsx(291,15): error TS1003: Identifier expected.
+src/pages/POS.tsx(292,14): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(293,25): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(293,73): error TS1005: '}' expected.
+src/pages/POS.tsx(293,80): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(294,3): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(296,47): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(297,44): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/pages/POS.tsx(671,1): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+src/pages/POS.tsx(672,1): error TS1005: '</' expected.
