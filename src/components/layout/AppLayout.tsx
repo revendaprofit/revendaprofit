@@ -202,7 +202,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     href={item.href}
                     isActive={location.pathname === item.href}
                     onClick={() => setIsMobileOpen(false)}
-                    disabled={"disabled" in item ? item.disabled : false}
+                    disabled={"disabled" in item ? !!(item as any).disabled : false}
                   />
                 ))}
               </div>

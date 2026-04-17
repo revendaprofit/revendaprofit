@@ -26,7 +26,9 @@ type Sale = {
   discount_type?: string;
   shipping_payer?: string;
   customers: any;
+  customer_id?: string;
   sale_items?: { unit_cost: number, quantity: number }[];
+  partnership_orders?: any[];
 };
 
 type SaleItem = {

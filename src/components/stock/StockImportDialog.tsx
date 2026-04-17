@@ -189,7 +189,7 @@ export default function StockImportDialog() {
          await new Promise(r => setTimeout(r, 50));
       }
 
-      const variantsToInsert = [];
+      const variantsToInsert: any[] = [];
       setStatus('Montando Malha de Variações e Estoque...');
       for (const [name, rows] of Object.entries(productsGrouped)) {
          const pId = productNameToIds[name];

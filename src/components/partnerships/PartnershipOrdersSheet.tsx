@@ -109,12 +109,12 @@ export default function PartnershipOrdersSheet({ partnershipId, partnerEmail }: 
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <h4 className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                         {order.products?.name}
+                         {(order.products as any)?.name}
                          {getStatusBadge(order.status)}
                       </h4>
                       <p className="text-xs text-slate-500 mt-1 flex gap-2">
                         <span>Qtd: <strong className="text-slate-800">{order.quantity}</strong></span>
-                        {order.product_variants && <span>• Tam: <strong className="text-slate-800">{order.product_variants.size} {order.product_variants.color}</strong></span>}
+                        {order.product_variants && <span>• Tam: <strong className="text-slate-800">{(order.product_variants as any).size} {(order.product_variants as any).color}</strong></span>}
                       </p>
                     </div>
                     <div className="text-right">

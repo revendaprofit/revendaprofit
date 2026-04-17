@@ -143,7 +143,7 @@ export default function StockControl() {
   const { data: suppliers = [] } = useQuery({ queryKey: ['suppliers'], queryFn: async () => (await supabase.from('suppliers').select('*')).data || [] });
   const { data: subcategories = [] } = useQuery({ queryKey: ['subcategories'], queryFn: async () => (await supabase.from('subcategories').select('*')).data || [] });
 
-  const filtered = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = products.filter((p: any) => p.name.toLowerCase().includes(search.toLowerCase()));
 
   const handleEdit = (p: Product) => {
     setEditingProduct(p);
@@ -322,7 +322,7 @@ export default function StockControl() {
                 <Button 
                   variant="ghost" 
                   className="w-full text-muted-foreground" 
-                  onClick={() => setFilters({ categoryId: 'all', supplierId: 'all', subcategory: '', stockStatus: 'all', minPrice: '', maxPrice: '', filterModel: '', filterColor: '', ncm: '', ean: '', mediaStatus: 'all' })}
+                  onClick={() => setFilters({ categoryId: 'all', supplierId: 'all', subcategoryId: '', stockStatus: 'all', minPrice: '', maxPrice: '', filterModel: '', filterColor: '', ncm: '', ean: '', mediaStatus: 'all' })}
                 >
                   <X className="mr-2 h-4 w-4" /> Limpar Filtros
                 </Button>
@@ -336,7 +336,7 @@ export default function StockControl() {
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow>
-              <TableHead className="w-[50px]"><input type="checkbox" onChange={e => setSelectedIds(e.target.checked ? filtered.map(f => f.id) : [])} checked={filtered.length > 0 && selectedIds.length === filtered.length} className="w-4 h-4" /></TableHead>
+              <TableHead className="w-[50px]"><input type="checkbox" onChange={e => setSelectedIds(e.target.checked ? filtered.map((f: any) => f.id) : [])} checked={filtered.length > 0 && selectedIds.length === filtered.length} className="w-4 h-4" /></TableHead>
               <TableHead className="min-w-[80px]">Imagem</TableHead>
               <TableHead className="min-w-[200px]">Produto</TableHead>
               <TableHead className="min-w-[120px]">Categoria</TableHead>
@@ -349,7 +349,7 @@ export default function StockControl() {
           <TableBody>
             {isLoading ? <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow> :
               filtered.length === 0 ? <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum produto.</TableCell></TableRow> :
-                filtered.map(p => {
+                filtered.map((p: any) => {
                   const isP2p = activeTab === 'p2p';
                   const p2pPartnerEmail = isP2p ? (() => {
                      const match = partnerships.find((pt:any) => pt.id === p._p2p_partnership_id);
