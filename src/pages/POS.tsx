@@ -87,7 +87,9 @@ export default function POS() {
   
   const [customerMode, setCustomerMode] = useState<'registered' | 'manual'>('registered');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [manualCustomer, setManualCustomer] = useState({ name: '', phone: '', instagram: '' });
+  const [manualName, setManualName] = useState('');
+  const [manualPhone, setManualPhone] = useState('');
+  const [manualInstagram, setManualInstagram] = useState('');
   
   const [payment1Method, setPayment1Method] = useState('');
   const [payment2Method, setPayment2Method] = useState('');
@@ -117,7 +119,7 @@ export default function POS() {
        const c = customers.find(x => x.id === selectedCustomerId);
        phoneStr = c?.phone || '';
     } else {
-       phoneStr = manualCustomer.phone || '';
+       phoneStr = manualPhone || '';
     }
 
     if (!phoneStr) {
@@ -321,11 +323,11 @@ export default function POS() {
 
       // Registrar cliente se manual
       let customer_id = customerMode === 'registered' ? selectedCustomerId : null;
-      if (customerMode === 'manual' && manualCustomer.name) {
+      if (customerMode === 'manual' && manualName) {
         const { data, error } = await supabase.from('customers').insert([{
-          name: manualCustomer.name,
-          phone: manualCustomer.phone,
-          instagram: manualCustomer.instagram,
+          name: manualName,
+          phone: manualPhone,
+          instagram: manualInstagram,
           owner_id: user.id
         }]).select('id').single();
         if (error) throw error;
@@ -402,8 +404,8 @@ export default function POS() {
           // Itens Hub: criar fulfillment orders
           const groupHubItems = group.items.filter(c => c._is_hub);
           for (const hubItem of groupHubItems) {
-            const customerName = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.name || 'Cliente') : (manualCustomer.name || 'Cliente');
-            const customerPhone = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.phone || '') : (manualCustomer.phone || '');
+            const customerName = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.name || 'Cliente') : (manualName || 'Cliente');
+            const customerPhone = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.phone || '') : (manualPhone || '');
             const { error: fulfillErr } = await supabase.from('hub_fulfillment_orders').insert({
               hub_product_id: hubItem._hub_product_id,
               hub_variant_id: hubItem.variant_id,
@@ -502,7 +504,9 @@ export default function POS() {
       toast.success('Venda concluída com sucesso!');
       setCart([]);
       setObservations('');
-      setManualCustomer({ name: '', phone: '', instagram: '' });
+      setManualName('');
+      setManualPhone('');
+      setManualInstagram('');
       setSelectedCustomerId('');
       setSearch('');
       setStoreOrderId(null);
@@ -697,16 +701,16 @@ export default function POS() {
                   <>
                     <div>
                       <label className="text-xs font-bold text-gray-700 mb-1.5 block">Nome do Cliente</label>
-                      <Input placeholder="Opcional" className="h-10 border-gray-200" value={manualCustomer.name} onChange={e => setManualCustomer({...manualCustomer, name: e.target.value})}/>
+                      <Input placeholder="Opcional" className="h-10 border-gray-200" value={manualName} onChange={e => setManualName(e.target.value)}/>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-xs font-bold text-gray-700 mb-1.5 block">Telefone</label>
-                        <Input placeholder="(00) 00000-0000" className="h-10 border-gray-200" value={manualCustomer.phone} onChange={e => setManualCustomer({...manualCustomer, phone: e.target.value})} />
+                        <Input placeholder="(00) 00000-0000" className="h-10 border-gray-200" value={manualPhone} onChange={e => setManualPhone(e.target.value)} />
                       </div>
                       <div>
                         <label className="text-xs font-bold text-gray-700 mb-1.5 block">@ Instagram</label>
-                        <Input placeholder="@usuario" className="h-10 border-gray-200" value={manualCustomer.instagram} onChange={e => setManualCustomer({...manualCustomer, instagram: e.target.value})} />
+                        <Input placeholder="@usuario" className="h-10 border-gray-200" value={manualInstagram} onChange={e => setManualInstagram(e.target.value)} />
                       </div>
                     </div>
                   </>
