@@ -562,7 +562,11 @@ export default function POS() {
      checkoutMutation.mutate();
   };
 
-  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredProducts = products.filter(p => {
+     const matchesName = p.name.toLowerCase().includes(search.toLowerCase());
+     const hasStock = p.product_variants && p.product_variants.some(v => v.stock > 0);
+     return matchesName && hasStock;
+  });
   const totalItems = cart.reduce((acc, c) => acc + c.quantity, 0);
 
 
