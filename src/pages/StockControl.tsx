@@ -110,7 +110,11 @@ export default function StockControl() {
         query = query.eq('category_id', filters.categoryId);
       }
       
-      if (filters.supplierId !== 'all') query = query.eq('supplier_id', filters.supplierId);
+      if (filters.supplierId === 'none') {
+        query = query.is('supplier_id', null);
+      } else if (filters.supplierId && filters.supplierId !== 'all') {
+        query = query.eq('supplier_id', filters.supplierId);
+      }
       
       if (filters.subcategoryId === 'none') {
         query = query.is('subcategory_id', null);
@@ -248,6 +252,7 @@ export default function StockControl() {
                     <label className="text-xs font-semibold uppercase text-muted-foreground">Fornecedor</label>
                     <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.supplierId} onChange={e => setFilters({...filters, supplierId: e.target.value})}>
                       <option value="all">Todos os Fornecedores</option>
+                      <option value="none" className="text-destructive font-medium">Sem Fornecedor</option>
                       {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
