@@ -688,11 +688,13 @@ export default function POS() {
              <div className="space-y-4">
                <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 block">Cliente</label>
-                  <select className="w-full h-12 border border-slate-200 text-sm rounded-xl px-4 bg-white outline-none focus:border-primary focus:ring-2 focus:ring-primary shadow-sm font-medium" value={customerMode === 'manual' ? '' : selectedCustomerId} onChange={e => {
-                     if (!e.target.value) setCustomerMode('manual');
+                  <select className="w-full h-12 border border-slate-200 text-sm rounded-xl px-4 bg-white outline-none focus:border-primary focus:ring-2 focus:ring-primary shadow-sm font-medium" value={customerMode === 'manual' ? 'manual' : (selectedCustomerId || '')} onChange={e => {
+                     if (e.target.value === 'manual') setCustomerMode('manual');
+                     else if (e.target.value === '') { setCustomerMode('registered'); setSelectedCustomerId(''); }
                      else { setCustomerMode('registered'); setSelectedCustomerId(e.target.value); }
                   }}>
-                     <option value="">Digitar manualmente</option>
+                     <option value="">Selecione um Cliente (Opcional)</option>
+                     <option value="manual">➕ Digitar Nome Manualmente</option>
                      {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                </div>
