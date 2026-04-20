@@ -15,7 +15,7 @@ export default function PartnerPointWizardDialog({ open, onOpenChange, initialDa
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<any>({
     name: '',
     contact_name: '',
     phone: '',
@@ -25,6 +25,7 @@ export default function PartnerPointWizardDialog({ open, onOpenChange, initialDa
     commission_retirada: '5',
     payment_method: 'partner',
     partner_machine_fee: '2',
+    accepted_payment_methods: [],
     replenishment_cycle_days: '30',
     min_stock_alert: '5',
     loss_risk_active: true
@@ -174,14 +175,14 @@ export default function PartnerPointWizardDialog({ open, onOpenChange, initialDa
                  <div>
                    <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
                      Comissão Arara (%) 
-                     <HelpCircle className="w-3 h-3 cursor-help text-muted-foreground" title="Venda realizada para produtos que já estão fisicamente na arara do local." />
+                     <span title="Venda realizada para produtos que já estão fisicamente na arara do local."><HelpCircle className="w-3 h-3 cursor-help text-muted-foreground" /></span>
                    </label>
                    <Input type="number" value={formData.commission_arara} onChange={e => setFormData({...formData, commission_arara: e.target.value})} />
                  </div>
                  <div>
                    <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
                      Comissão Retirada (%)
-                     <HelpCircle className="w-3 h-3 cursor-help text-muted-foreground" title="Venda realizada online onde o parceiro age apenas como ponto de coleta." />
+                     <span title="Venda realizada online onde o parceiro age apenas como ponto de coleta."><HelpCircle className="w-3 h-3 cursor-help text-muted-foreground" /></span>
                    </label>
                    <Input type="number" value={formData.commission_retirada} onChange={e => setFormData({...formData, commission_retirada: e.target.value})} />
                  </div>
