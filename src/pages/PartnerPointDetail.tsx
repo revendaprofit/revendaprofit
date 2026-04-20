@@ -15,6 +15,7 @@ import PartnerPointStockTab from '@/components/partner-points/PartnerPointStockT
 import PartnerPointSalesTab from '@/components/partner-points/PartnerPointSalesTab';
 import PartnerPointSettlementsTab from '@/components/partner-points/PartnerPointSettlementsTab';
 import PartnerPointWizardDialog from '@/components/partner-points/PartnerPointWizardDialog';
+import PartnerPointAnalyticsTab from '@/components/partner-points/PartnerPointAnalyticsTab';
 
 export default function PartnerPointDetail() {
   const { id } = useParams();
@@ -117,7 +118,7 @@ export default function PartnerPointDetail() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6 bg-slate-100 p-1 rounded-xl">
+        <TabsList className="grid w-full grid-cols-4 mb-6 bg-slate-100 p-1 rounded-xl">
           <TabsTrigger value="stock" className="rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
             <Store className="h-4 w-4" /> <span className="hidden sm:inline">Estoque da </span> Arara
           </TabsTrigger>
@@ -126,6 +127,9 @@ export default function PartnerPointDetail() {
           </TabsTrigger>
           <TabsTrigger value="finance" className="rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
             <DollarSign className="h-4 w-4" /> Acertos Financeiros
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="rounded-lg gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            <ScanLine className="h-4 w-4" /> Analytics
           </TabsTrigger>
         </TabsList>
 
@@ -140,6 +144,10 @@ export default function PartnerPointDetail() {
 
           <TabsContent value="finance" className="m-0 border-none outline-none">
             {activeTab === 'finance' && <PartnerPointSettlementsTab point={point} />}
+          </TabsContent>
+
+          <TabsContent value="analytics" className="m-0 border-none outline-none p-5">
+            {activeTab === 'analytics' && <PartnerPointAnalyticsTab pointId={point.id} />}
           </TabsContent>
         </div>
       </Tabs>

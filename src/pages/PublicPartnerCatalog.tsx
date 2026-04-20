@@ -55,8 +55,37 @@ export default function PublicPartnerCatalog() {
 
   const stockError = undefined; // Keeping it simple
 
+  // Track Page Views for Partner
+  React.useEffect(() => {
+    if (!partner?.id) return;
+    let sessionId = localStorage.getItem('rp_visitor_session');
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      localStorage.setItem('rp_visitor_session', sessionId);
+    }
+    supabase.from('catalog_events').insert({
+      owner_id: partner.owner_id,
+      event_type: 'page_view',
+      session_id: sessionId,
+      partner_point_id: partner.id
+    }).then();
+  }, [partner?.id]);
+
   const addToCart = (item: any) => {
     const existing = cart.find(c => c.variant_id === item.variant_id);
+    
+    // Rastrear adição ao carrinho
+    const sessionId = localStorage.getItem('rp_visitor_session');
+    if (partner?.id && sessionId) {
+       supabase.from('catalog_events').insert({
+          owner_id: partner.owner_id,
+          event_type: 'add_to_cart',
+          product_id: item.product_id,
+          session_id: sessionId,
+          partner_point_id: partner.id
+       }).then();
+    }
+
     if (existing) {
       if (existing.qty >= item.quantity) {
         toast.error('Quantidade máxima disponível na arara atingida.');
@@ -91,6 +120,17 @@ export default function PublicPartnerCatalog() {
       return;
     }
     if (cart.length === 0) return;
+
+    // Track Initiate Checkout
+    const sessionId = localStorage.getItem('rp_visitor_session');
+    if (partner?.id && sessionId) {
+       supabase.from('catalog_events').insert({
+          owner_id: partner.owner_id,
+          event_type: 'initiate_checkout',
+          session_id: sessionId,
+          partner_point_id: partner.id
+       }).then();
+    }
 
     setIsSynthesizing(true);
     try {
