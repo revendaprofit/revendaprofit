@@ -88,9 +88,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       { name: "Minha Loja", href: "/settings", icon: Settings },
       { name: "Bolsas Consignadas", href: "/consignment-bags", icon: Briefcase },
       { name: "Modo Evento", href: "/event-mode", icon: Ticket, disabled: true },
-      { name: "Consórcios", href: "/consortiums", icon: PiggyBank, disabled: true },
-      { name: "Bazar VIP", href: "/vip-bazaar", icon: Sparkles, disabled: true },
-      { name: "Pontos Parceiros", href: "/partner-points", icon: MapPin, disabled: true },
+      { name: "Consórcios", href: "/consortiums", icon: PiggyBank },
+      { name: "Bazar VIP", href: "/bazar-admin", icon: Sparkles },
+      { name: "Pontos Parceiros", href: "/partner-points", icon: MapPin },
     ],
     [
       { name: "Pedidos da Loja", href: "/orders", icon: Box },

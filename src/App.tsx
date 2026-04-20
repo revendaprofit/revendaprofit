@@ -23,6 +23,16 @@ import HubOrders from "./pages/HubOrders";
 import Partnerships from "./pages/Partnerships";
 import ConsignmentBags from "./pages/ConsignmentBags";
 import PublicConsignmentBag from "./pages/PublicConsignmentBag";
+import Consortiums from "./pages/Consortiums";
+import ConsortiumDetail from "./pages/ConsortiumDetail";
+import PartnerPoints from "./pages/PartnerPoints";
+import PartnerPointDetail from "./pages/PartnerPointDetail";
+import PublicPartnerCatalog from "./pages/PublicPartnerCatalog";
+import PartnerContract from "./pages/PartnerContract";
+import PartnerCartaz from "./pages/PartnerCartaz";
+import ReleaseTicket from "./pages/ReleaseTicket";
+import BazarSellerSubmit from "./pages/BazarSellerSubmit";
+import BazarAdmin from "./pages/BazarAdmin";
 
 // Pages - Supplier
 import SupplierDashboard from "./pages/supplier/SupplierDashboard";
@@ -66,6 +76,10 @@ function SmartRedirect() {
     return <Navigate to="/supplier" replace />;
   }
 
+  if (role === 'bazar_seller') {
+    return <Navigate to="/bazar/minha-loja" replace />;
+  }
+
   return <Dashboard />;
 }
 
@@ -76,6 +90,11 @@ const AppRoutes = () => (
     <Route path="/auth" element={<Auth />} />
     <Route path="/loja/:slug" element={<PublicCatalog />} />
     <Route path="/malinha/:bag_id" element={<PublicConsignmentBag />} />
+    <Route path="/parceiro/:slug" element={<PublicPartnerCatalog />} />
+    <Route path="/parceiro/:id/cartaz" element={<PartnerCartaz />} />
+    <Route path="/contrato/:id" element={<PartnerContract />} />
+    <Route path="/liberacao/:id" element={<ReleaseTicket />} />
+    <Route path="/bazar/:storeSlug" element={<BazarSellerSubmit />} />
     
     {/* Admin */}
     <Route path="/admin" element={<ProtectedRoute><AppLayout><AdminDashboard /></AppLayout></ProtectedRoute>} />
@@ -96,6 +115,11 @@ const AppRoutes = () => (
     <Route path="/hub/orders" element={<ProtectedRoute><AppLayout><HubOrders /></AppLayout></ProtectedRoute>} />
     <Route path="/partnerships" element={<ProtectedRoute><AppLayout><Partnerships /></AppLayout></ProtectedRoute>} />
     <Route path="/consignment-bags" element={<ProtectedRoute><AppLayout><ConsignmentBags /></AppLayout></ProtectedRoute>} />
+    <Route path="/consortiums" element={<ProtectedRoute><AppLayout><Consortiums /></AppLayout></ProtectedRoute>} />
+    <Route path="/consortiums/:id" element={<ProtectedRoute><AppLayout><ConsortiumDetail /></AppLayout></ProtectedRoute>} />
+    <Route path="/partner-points" element={<ProtectedRoute><AppLayout><PartnerPoints /></AppLayout></ProtectedRoute>} />
+    <Route path="/partner-points/:id" element={<ProtectedRoute><AppLayout><PartnerPointDetail /></AppLayout></ProtectedRoute>} />
+    <Route path="/bazar-admin" element={<ProtectedRoute><AppLayout><BazarAdmin /></AppLayout></ProtectedRoute>} />
 
     {/* Supplier Routes */}
     <Route path="/supplier" element={<ProtectedRoute><AppLayout><SupplierDashboard /></AppLayout></ProtectedRoute>} />

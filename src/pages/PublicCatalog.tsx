@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -89,24 +89,80 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
             <div className="space-y-2">
               <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">Selecionar Tamanho</label>
               <div className="flex flex-wrap gap-2">
-                {inStockVariants.map((v: any) => {
-                  const qtyInCart = cart.find((c:any) => c.variant_id === v.id)?.qty || 0;
-                  return (
-                    <button 
-                      key={v.id}
-                      onClick={(e) => { e.stopPropagation(); onAddToCart(p, v); }}
-                      disabled={qtyInCart >= v.stock}
-                      className="text-xs font-medium px-2.5 py-1.5 rounded-md border flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors z-30 relative"
-                      title={`Estoque: ${v.stock}`}
-                    >
-                      {v.size} {v.color && `- ${v.color}`}
-                      {qtyInCart > 0 && <span className="ml-1.5 bg-primary text-white text-[10px] h-4 w-4 rounded-full flex items-center justify-center">{qtyInCart}</span>}
-                    </button>
-                  )
-                })}
+                {(() => {
+                  const sizeOrder = ['PP', 'P', 'M', 'G', 'GG', 'XG', 'XXG', 'EG', 'EGG'];
+                  const sorted = [...inStockVariants].sort((a: any, b: any) => {
+                    const idxA = sizeOrder.indexOf((a.size || '').toUpperCase());
+                    const idxB = sizeOrder.indexOf((b.size || '').toUpperCase());
+                    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                    if (idxA !== -1) return -1;
+                    if (idxB !== -1) return 1;
+                    // Numéricos (34, 36, 38...)
+                    const numA = parseFloat(a.size); const numB = parseFloat(b.size);
+                    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+                    return (a.size || '').localeCompare(b.size || '');
+                  });
+                  return sorted.map((v: any) => {
+                    const qtyInCart = cart.find((c:any) => c.variant_id === v.id)?.qty || 0;
+                    return (
+                      <button 
+                        key={v.id}
+                        onClick={(e) => { e.stopPropagation(); onAddToCart(p, v); }}
+                        disabled={qtyInCart >= v.stock}
+                        className="text-xs font-medium px-2.5 py-1.5 rounded-md border flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors z-30 relative"
+                        title={`Estoque: ${v.stock}`}
+                      >
+                        {v.size}
+                        {qtyInCart > 0 && <span className="ml-1.5 bg-primary text-white text-[10px] h-4 w-4 rounded-full flex items-center justify-center">{qtyInCart}</span>}
+                      </button>
+                    )
+                  });
+                })()}
               </div>
             </div>
           ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BazarCard({ item, store, cart, handleAddToCart }: { item: any; store: any; cart: any[]; handleAddToCart: any }) {
+  return (
+    <div className="rounded-2xl overflow-hidden shadow-sm border hover:shadow-md transition-shadow group flex flex-col" style={{ backgroundColor: store.card_bg_color || '#ffffff', borderColor: 'rgba(0,0,0,0.05)' }}>
+      <div className="aspect-[4/5] bg-gray-100 relative overflow-hidden flex items-center justify-center">
+        {item.images?.[0] ? (
+          <img src={item.images[0]} alt={item.title} className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500" />
+        ) : (
+          <ShoppingBag className="h-10 w-10 text-gray-300" />
+        )}
+        <div className="absolute top-2 left-2 z-20">
+          <div className="bg-purple-600/90 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm uppercase tracking-wider">
+            <Sparkles className="h-3 w-3" /> Peça Única
+          </div>
+        </div>
+        {item.condition && (
+          <div className="absolute top-2 right-2 z-20 bg-white/80 backdrop-blur text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full text-slate-600">
+            {item.condition === 'new' ? 'Nova' : item.condition === 'like_new' ? 'Seminova' : item.condition === 'used' ? 'Usada' : 'Com Desgaste'}
+          </div>
+        )}
+      </div>
+      <div className="p-4 flex flex-col flex-1">
+        <h3 className="font-semibold text-gray-900 leading-tight mb-1 line-clamp-2 md:text-lg font-store-title">{item.title}</h3>
+        {item.size && <p className="text-xs text-gray-500 mb-2">Tam: {item.size} {item.color ? `· ${item.color}` : ''}</p>}
+        <div className="mt-auto">
+          <p className="text-lg font-bold text-gray-900 mb-3">R$ {Number(item.final_price).toFixed(2)}</p>
+          <button
+            onClick={() => {
+              const bazarProduct = { ...item, name: item.title, sale_price: Number(item.final_price), _is_bazar: true };
+              const bazarVariant = { id: `bazar_${item.id}`, size: item.size || 'Único', color: item.color || '', stock: 1 };
+              handleAddToCart(bazarProduct, bazarVariant);
+            }}
+            disabled={cart.some((c: any) => c.variant_id === `bazar_${item.id}`)}
+            className="w-full text-xs font-bold px-4 py-2.5 rounded-lg border flex items-center justify-center gap-1 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {cart.some((c: any) => c.variant_id === `bazar_${item.id}`) ? '✓ No Carrinho' : 'Adicionar ao Carrinho'}
+          </button>
         </div>
       </div>
     </div>
@@ -118,6 +174,7 @@ export default function PublicCatalog() {
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<{ variant_id: string, product: any, variant: any, qty: number }[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [showBazar, setShowBazar] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
@@ -235,6 +292,21 @@ export default function PublicCatalog() {
     }
   });
 
+  // Carrega itens do Bazar VIP
+  const { data: bazarItems = [] } = useQuery({
+    queryKey: ['public-bazar-items', store?.owner_id],
+    enabled: !!store?.owner_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('bazar_items')
+        .select('*')
+        .eq('owner_id', store.owner_id)
+        .eq('status', 'approved');
+      if (error) return [];
+      return data || [];
+    }
+  });
+
   // Mescla produtos locais + hub importados + parcerias
   const products = [...localProducts, ...hubImportedProducts, ...partnershipProducts];
 
@@ -282,8 +354,23 @@ export default function PublicCatalog() {
            }
        });
     });
+    // Ordem fixa das categorias (badges)
+    const categoryOrder = [
+      'Lançamentos', 'Feminino', 'Masculino', 'Acessórios',
+      'Infantil', 'Moda Praia', 'Óculos', 'Bazar VIP'
+    ];
+    const sortedCategories = Array.from(map.values()).sort((a, b) => {
+      const idxA = categoryOrder.findIndex(c => c.toLowerCase() === a.name.toLowerCase());
+      const idxB = categoryOrder.findIndex(c => c.toLowerCase() === b.name.toLowerCase());
+      // Categorias na lista fixa vêm primeiro na ordem definida; o resto vai ao final em ordem alfabética
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
     return {
-      availableCategories: Array.from(map.values()).sort((a,b) => a.name.localeCompare(b.name)),
+      availableCategories: sortedCategories,
       availableSizes: Array.from(sizes).sort(),
       availableColors: Array.from(colors).sort()
     };
@@ -465,24 +552,32 @@ export default function PublicCatalog() {
           )}
         </div>
 
-        {availableCategories.length > 0 && (
+        {(availableCategories.length > 0 || bazarItems.length > 0) && (
            <div className="mb-8 overflow-x-auto pb-4 custom-scrollbar">
              <div className="flex gap-2 min-w-max">
-               <button 
-                 onClick={() => { setSelectedCategory(null); setSelectedSubcategory(null); }}
-                 className={`whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all ${!selectedCategory ? 'bg-primary text-primary-foreground shadow-md transform scale-105' : 'bg-white border hover:bg-gray-50 text-gray-700'}`}
-               >
-                 Todos Produtos
-               </button>
-               {availableCategories.map(c => (
+               {availableCategories.filter(c => c.name.toLowerCase() !== 'bazar vip').map(c => (
                  <button 
                    key={c.id} 
-                   onClick={() => { setSelectedCategory(c.id); setSelectedSubcategory(null); }}
+                   onClick={() => { 
+                     if (selectedCategory === c.id) { setSelectedCategory(null); setSelectedSubcategory(null); } 
+                     else { setSelectedCategory(c.id); setSelectedSubcategory(null); setShowBazar(false); }
+                   }}
                    className={`whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all ${selectedCategory === c.id ? 'bg-primary text-primary-foreground shadow-md transform scale-105' : 'bg-white border hover:bg-gray-50 text-gray-700'}`}
                  >
                    {c.name}
                  </button>
                ))}
+               {bazarItems.length > 0 && (
+                 <button
+                   onClick={() => { 
+                     if (showBazar) { setShowBazar(false); }
+                     else { setShowBazar(true); setSelectedCategory(null); setSelectedSubcategory(null); }
+                   }}
+                   className={`whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all flex items-center gap-1.5 ${showBazar ? 'bg-purple-600 text-white shadow-md transform scale-105' : 'bg-white border hover:bg-purple-50 text-purple-700 border-purple-200'}`}
+                 >
+                   <Sparkles className="h-4 w-4" /> Bazar VIP
+                 </button>
+               )}
              </div>
              
              {(() => {
@@ -513,9 +608,20 @@ export default function PublicCatalog() {
            </div>
         )}
 
-        {productsLoading ? (
+        {showBazar ? (
+          /* Bazar VIP Grid (aba exclusiva) */
+          bazarItems.length === 0 ? (
+            <div className="text-center py-20 text-gray-400">Nenhuma peça no Bazar VIP ainda.</div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+              {bazarItems.map((item: any) => (
+                <BazarCard key={item.id} item={item} store={store} cart={cart} handleAddToCart={handleAddToCart} />
+              ))}
+            </div>
+          )
+        ) : productsLoading ? (
           <div className="text-center py-20 text-gray-400">Desempacotando prateleiras...</div>
-        ) : filteredProducts.length === 0 ? (
+        ) : filteredProducts.length === 0 && bazarItems.length === 0 ? (
           <div className="text-center py-20 text-gray-400">Nenhum produto encontrado.</div>
         ) : (
           <div className={store.product_layout === 'list' ? "flex flex-col gap-4" : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6"}>
@@ -529,6 +635,10 @@ export default function PublicCatalog() {
                 onAddToCart={handleAddToCart}
                 onSelectProduct={setSelectedProduct}
               />
+            ))}
+            {/* Itens do Bazar VIP misturados em "Todos Produtos" */}
+            {!selectedCategory && bazarItems.map((item: any) => (
+              <BazarCard key={`bazar-${item.id}`} item={item} store={store} cart={cart} handleAddToCart={handleAddToCart} />
             ))}
           </div>
         )}

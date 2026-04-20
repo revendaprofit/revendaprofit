@@ -20,8 +20,9 @@ export default function StoreOrders() {
       const { data, error } = await supabase
         .from('store_orders')
         .select(`
-          id, order_code, status, total_amount, items, created_at,
-          customers ( id, name, phone )
+          id, order_code, status, total_amount, items, created_at, partner_point_id,
+          customers ( id, name, phone ),
+          partner_points ( name )
         `)
         .eq('owner_id', user.id)
         .order('created_at', { ascending: false });
@@ -70,6 +71,11 @@ export default function StoreOrders() {
                 {order.status === 'pending' && <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 uppercase tracking-widest bg-amber-100 px-2 py-0.5 rounded-full"><Clock className="w-3 h-3"/> Aguardando</span>}
                 {order.status === 'completed' && <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100 px-2 py-0.5 rounded-full"><CheckCircle className="w-3 h-3"/> Convertido</span>}
                 {order.status === 'cancelled' && <span className="flex items-center gap-1 text-[10px] font-bold text-red-600 uppercase tracking-widest bg-red-100 px-2 py-0.5 rounded-full"><XCircle className="w-3 h-3"/> Cancelado</span>}
+                {order.partner_points?.name && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-purple-600 uppercase tracking-widest bg-purple-100 px-2 py-0.5 rounded-full" title={`Veio do parceiro: ${order.partner_points.name}`}>
+                    PARCEIRO: {order.partner_points.name}
+                  </span>
+                )}
               </div>
               <span className="text-xs text-gray-500 font-medium">
                 {new Date(order.created_at).toLocaleDateString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}

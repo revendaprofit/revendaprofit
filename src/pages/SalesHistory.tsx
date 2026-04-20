@@ -68,8 +68,9 @@ export default function SalesHistory() {
         .from('sales')
         .select(`
           id, total_amount, discount, payment_method, payment_method_2, payment_amount_2, payment_fee_amount, payment_fee_amount_2, status, created_at,
-          sale_origin, shipping_method, shipping_cost, discount_type, shipping_payer, customer_id,
+          sale_origin, shipping_method, shipping_cost, discount_type, shipping_payer, customer_id, partner_point_id,
           customers ( name ),
+          partner_points ( name, commission_arara ),
           sale_items ( product_id, unit_cost, quantity, products ( name, cost_price ) ),
           partnership_orders ( product_id, partnership_settlements ( amount_owed, cost_slice, profit_slice ) )
         `)
@@ -232,9 +233,12 @@ export default function SalesHistory() {
           return acc + (pSettlement?.profit_slice ? Number(pSettlement.profit_slice) : 0);
       }, 0) || 0;
 
-      return a + itemsCost + repassesCost;
+      const ppCommissionRate = Number(s.partner_points?.commission_arara || 0) / 100;
+      const ppCommissionCost = s.partner_point_id ? (Number(s.total_amount) * ppCommissionRate) : 0;
+
+      return a + itemsCost + repassesCost + ppCommissionCost;
   }, 0);
-  const sumLucro = sumVendas - sumCustos;
+  const sumLucroLiquido = sumVendas - sumCustos - filteredSales.reduce((a, s) => a + (Number(s.payment_fee_amount) || 0) + (Number(s.payment_fee_amount_2) || 0) + (s.shipping_payer === 'seller' ? (Number(s.shipping_cost) || 0) : 0), 0); const margemLucro = sumVendas > 0 ? (sumLucroLiquido / sumVendas) * 100 : 0;
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -255,17 +259,17 @@ export default function SalesHistory() {
             </div>
           </div>
           <div className="bg-card border rounded-xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-            <div className="bg-rose-100 text-rose-600 p-3 rounded-full"><Banknote className="h-6 w-6"/></div>
+            <div className="bg-blue-100 text-blue-600 p-3 rounded-full"><Banknote className="h-6 w-6"/></div>
             <div>
-              <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Total Custos</p>
-              <p className="text-2xl font-black text-rose-600 truncate">R$ {sumCustos.toFixed(2)}</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Lucro Líquido</p>
+              <p className="text-2xl font-black text-blue-600 truncate">R$ {sumLucroLiquido.toFixed(2)}</p>
             </div>
           </div>
           <div className="bg-card border rounded-xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-            <div className="bg-blue-100 text-blue-600 p-3 rounded-full"><Banknote className="h-6 w-6"/></div>
+            <div className="bg-purple-100 text-purple-600 p-3 rounded-full"><Banknote className="h-6 w-6"/></div>
             <div>
-              <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Lucro Bruto</p>
-              <p className="text-2xl font-black text-blue-600 truncate">R$ {sumLucro.toFixed(2)}</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Margem de Lucro</p>
+              <p className="text-2xl font-black text-purple-600 truncate">{margemLucro.toFixed(2)}%</p>
             </div>
           </div>
       </div>
@@ -301,6 +305,7 @@ export default function SalesHistory() {
                  <option value="Evento">Evento</option>
                  <option value="Bolsa Consignada">Bolsa Consignada</option>
                  <option value="Consórcio">Consórcio</option>
+                 <option value="Parcela Consórcio">Parcela Consórcio</option>
                  <option value="Bazar VIP">Bazar VIP</option>
                  <option value="Ponto Parceiro">Ponto Parceiro</option>
                  <option value="Loja Física">Loja Física</option>
@@ -465,6 +470,37 @@ export default function SalesHistory() {
                 <h4 className="font-semibold text-emerald-900 border-b border-emerald-200 pb-2 mb-3">Balanço Financeiro (Lucro Real)</h4>
                 
                 {(() => {
+                  // Parcela de Consórcio: sem itens = lucro puro
+                  const isParcelaConsorcio = selectedSale.sale_origin === 'Parcela Consórcio' && saleItems.length === 0;
+
+                  if (isParcelaConsorcio) {
+                    const revenue = Number(selectedSale.total_amount) - Number(selectedSale.discount);
+                    const fees = Number(selectedSale.payment_fee_amount || 0) + Number(selectedSale.payment_fee_amount_2 || 0);
+                    const netProfit = revenue - fees;
+                    return (
+                      <>
+                        <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-amber-50 border border-amber-200">
+                          <span className="text-lg">📄</span>
+                          <span className="text-amber-800 font-semibold text-xs">Parcela de Consórcio (receita pura, sem custo de produto)</span>
+                        </div>
+                        <div className="flex justify-between text-slate-700">
+                          <span>Receita da Parcela:</span>
+                          <span className="font-semibold">R$ {revenue.toFixed(2)}</span>
+                        </div>
+                        {fees > 0 && (
+                          <div className="flex justify-between text-red-600 mt-1">
+                            <span>Taxas:</span>
+                            <span>- R$ {fees.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-base font-black text-emerald-700 pt-2 border-t border-emerald-200 mt-2">
+                          <span>Lucro Líquido (Você):</span>
+                          <span>R$ {netProfit.toFixed(2)}</span>
+                        </div>
+                      </>
+                    );
+                  }
+
                   const grossRevenue = saleItems.reduce((acc, item) => acc + Number(item.total_price), 0) - Number(selectedSale.discount);
                   
                   const pOrders = selectedSale.partnership_orders || [];
@@ -500,10 +536,6 @@ export default function SalesHistory() {
                   const feesAndShipping = fees + storeShippingCost;
                   
                   // Lucro Líquido = Lucro Bruto - (Apenas o Repasse de Lucro, pois o repasse de custo já saiu do Lucro Bruto ao abater pureCost) - Taxas
-                  // Wait: Total Repasse = cstSlice + prfSlice.
-                  // If Gross Revenue = 145. pureCost = 76. Gross Profit = 69.
-                  // Seller keeps purely: 145 - 76 (pureCost is gone) - prfSlice (owner's profit) - fees.
-                  // Which mathematically is: grossProfit - prfSlice - fees!
                   const totalProfitRepasse = saleItems.reduce((acc, item) => {
                      const pOrder = pOrders.find((po: any) => po.product_id === item.product_id);
                      const pSetRaw = pOrder?.partnership_settlements;
@@ -515,6 +547,12 @@ export default function SalesHistory() {
 
                   return (
                     <>
+                      {selectedSale.sale_origin === 'Consórcio' && Number(selectedSale.discount) > 0 && (
+                        <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-blue-50 border border-blue-200">
+                          <span className="text-lg">💎</span>
+                          <span className="text-blue-800 font-semibold text-xs">Venda com crédito de consórcio (desconto = crédito utilizado, só custo impacta o caixa)</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-slate-700">
                         <span>Total Pago:</span>
                         <span className="font-semibold">R$ {grossRevenue.toFixed(2)}</span>
@@ -545,9 +583,16 @@ export default function SalesHistory() {
                         </div>
                       )}
                       
+                      {selectedSale.partner_point_id && selectedSale.partner_points && (
+                        <div className="flex justify-between text-red-600 mt-2">
+                          <span>Comissão Ponto Parceiro ({selectedSale.partner_points.commission_arara}%):</span>
+                          <span>- R$ {(Number(selectedSale.total_amount) * Number(selectedSale.partner_points.commission_arara) / 100).toFixed(2)}</span>
+                        </div>
+                      )}
+                      
                       <div className="flex justify-between text-base font-black text-emerald-700 pt-2 border-t border-emerald-200 mt-2">
                         <span>Lucro Líquido (Você):</span>
-                        <span>R$ {netProfit.toFixed(2)}</span>
+                        <span>R$ {(netProfit - (selectedSale.partner_point_id && selectedSale.partner_points ? (Number(selectedSale.total_amount) * Number(selectedSale.partner_points.commission_arara) / 100) : 0)).toFixed(2)}</span>
                       </div>
                     </>
                   );

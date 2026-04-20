@@ -51,17 +51,31 @@ export default function Dashboard() {
       const originCount: Record<string, number> = {};
 
       salesData?.forEach(sale => {
-         // Calculating true Gross Revenue (Items - Discount)
-         const grossRevenue = sale.sale_items.reduce((acc: number, item: any) => acc + Number(item.total_price), 0) - Number(sale.discount);
+         // Parcela de Consórcio: sem itens, total_amount é lucro puro
+         const isParcelaConsorcio = sale.sale_origin === 'Parcela Consórcio' && (!sale.sale_items || sale.sale_items.length === 0);
+
+         let grossRevenue: number;
+         let totalCost: number;
+         let netProfit: number;
+
+         if (isParcelaConsorcio) {
+           grossRevenue = Number(sale.total_amount) - Number(sale.discount);
+           totalCost = 0;
+           const fees = Number(sale.payment_fee_amount || 0) + Number(sale.payment_fee_amount_2 || 0);
+           netProfit = grossRevenue - fees;
+         } else {
+           // Calculating true Gross Revenue (Items - Discount)
+           grossRevenue = sale.sale_items.reduce((acc: number, item: any) => acc + Number(item.total_price), 0) - Number(sale.discount);
          
-         const totalCost = sale.sale_items.reduce((acc: number, item: any) => {
-            const c = item.unit_cost && item.unit_cost > 0 ? item.unit_cost : (item.products?.cost_price || 0);
-            return acc + (Number(c) * item.quantity);
-         }, 0);
+           totalCost = sale.sale_items.reduce((acc: number, item: any) => {
+              const c = item.unit_cost && item.unit_cost > 0 ? item.unit_cost : (item.products?.cost_price || 0);
+              return acc + (Number(c) * item.quantity);
+           }, 0);
          
-         const fees = Number(sale.payment_fee_amount || 0) + Number(sale.payment_fee_amount_2 || 0);
-         const storeShipping = sale.shipping_payer === 'seller' ? Number(sale.shipping_cost || 0) : 0;
-         const netProfit = grossRevenue - totalCost - fees - storeShipping;
+           const fees = Number(sale.payment_fee_amount || 0) + Number(sale.payment_fee_amount_2 || 0);
+           const storeShipping = sale.shipping_payer === 'seller' ? Number(sale.shipping_cost || 0) : 0;
+           netProfit = grossRevenue - totalCost - fees - storeShipping;
+         }
 
          totalRevenue += grossRevenue;
          totalNetProfit += netProfit;

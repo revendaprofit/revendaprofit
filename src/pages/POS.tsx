@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 
 type Customer = { id: string; name: string; phone?: string };
 type Product = { id: string; name: string; sale_price: number; cost_price: number; image_url: string; product_variants: Variant[]; _is_hub?: boolean; _hub_product_id?: string; _supplier_id?: string; _is_p2p?: boolean; _p2p_partnership_id?: string; _p2p_owner_id?: string; };
-type Variant = { id: string; size: string; color: string; stock: number };
+type Variant = { id: string; size: string; color: string; stock: number; _partner_allocated_qty?: number; _partner_names?: string[] };
 type CartItem = { 
   variant_id: string; 
   product_id: string; 
@@ -38,6 +38,7 @@ export default function POS() {
   const [cartImportCode, setCartImportCode] = useState('');
   const [storeOrderId, setStoreOrderId] = useState<string | null>(null);
   const [consignmentBagId, setConsignmentBagId] = useState<string | null>(null);
+  const [checkoutPartnerPointId, setCheckoutPartnerPointId] = useState<string | null>(null);
 
   useEffect(() => {
     const pendingJson = localStorage.getItem('revenda_pos_pending_order');
@@ -72,6 +73,9 @@ export default function POS() {
         if (order.consignment_bag_id) {
            setConsignmentBagId(order.consignment_bag_id);
            setSaleOrigin('Bolsa Consignada');
+        } else if (order.partner_point_id) {
+           setCheckoutPartnerPointId(order.partner_point_id);
+           setSaleOrigin('Ponto Parceiro');
         } else {
            setSaleOrigin('Loja Online');
         }
@@ -96,6 +100,9 @@ export default function POS() {
   const [payment1Amount, setPayment1Amount] = useState(0);
   const [payment2Amount, setPayment2Amount] = useState(0);
   const [hasSecondPayment, setHasSecondPayment] = useState(false);
+  const [releaseTicketUrl, setReleaseTicketUrl] = useState<string | null>(null);
+  const [releaseTicketCustomerPhone, setReleaseTicketCustomerPhone] = useState('');
+  const [releaseTicketCustomerName, setReleaseTicketCustomerName] = useState('');
   
   type Installment = { dueDate: string; amount: number; };
   const [installmentsCount1, setInstallmentsCount1] = useState(1);
@@ -112,6 +119,9 @@ export default function POS() {
   const [shippingCost, setShippingCost] = useState(0);
   const [shippingPayer, setShippingPayer] = useState<'buyer' | 'seller'>('buyer');
   const [observations, setObservations] = useState('');
+  // Consórcio
+  const [consortiumParticipantId, setConsortiumParticipantId] = useState<string | null>(null);
+  const [consortiumCreditRemaining, setConsortiumCreditRemaining] = useState(0);
 
   const handleSendTrackingWpp = () => {
     let phoneStr = '';
@@ -140,6 +150,63 @@ export default function POS() {
     }
   });
 
+  // Participantes contemplados com crédito restante (só quando origem é Consórcio)
+  const { data: drawnParticipants = [] } = useQuery({
+    queryKey: ['consortium-drawn-participants'],
+    queryFn: async () => {
+      // 1) Buscar participantes contemplados
+      const { data: participants, error } = await supabase
+        .from('consortium_participants')
+        .select('id, consortium_id, credit_awarded, credit_used, customer_id, customer_name, phone')
+        .eq('status', 'drawn');
+
+      console.log('[POS Consórcio] Participantes drawn:', participants, 'Erro:', error);
+      if (error || !participants) return [];
+
+      // Filtrar quem ainda tem crédito
+      const withCredit = participants.filter((p: any) => ((p.credit_awarded || 0) - (p.credit_used || 0)) > 0);
+      if (withCredit.length === 0) return [];
+
+      // 2) Buscar nome do consórcio
+      const consortiumIds = [...new Set(withCredit.map((p: any) => p.consortium_id))];
+      const { data: consortiums } = await supabase
+        .from('consortiums')
+        .select('id, name')
+        .in('id', consortiumIds);
+
+      // 3) Buscar nome do cliente (quando tem customer_id)
+      const customerIds = withCredit.map((p: any) => p.customer_id).filter(Boolean);
+      let customersMap: Record<string, string> = {};
+      if (customerIds.length > 0) {
+        const { data: custs } = await supabase
+          .from('customers')
+          .select('id, name')
+          .in('id', customerIds);
+        if (custs) custs.forEach((c: any) => { customersMap[c.id] = c.name; });
+      }
+
+      // 4) Montar resultado enriquecido
+      return withCredit.map((p: any) => ({
+        ...p,
+        consortium_name: consortiums?.find((c: any) => c.id === p.consortium_id)?.name || '',
+        resolved_name: p.customer_name || customersMap[p.customer_id] || 'Sem nome',
+      }));
+    },
+    enabled: saleOrigin === 'Consórcio',
+    refetchOnWindowFocus: true,
+  });
+
+  const { data: partnerPoints = [] } = useQuery({
+    queryKey: ['partner_points_pos'],
+    queryFn: async () => {
+       const user = (await supabase.auth.getUser()).data.user;
+       if (!user) return [];
+       const { data, error } = await supabase.from('partner_points').select('id, name, payment_method').eq('owner_id', user.id).eq('status', 'active');
+       if (error) throw error;
+       return data || [];
+    }
+  });
+
   const { data: products = [], isLoading: loadingProducts } = useQuery({
     queryKey: ['products-pos'],
     queryFn: async () => {
@@ -151,13 +218,25 @@ export default function POS() {
         .from('products')
         .select(`
           id, name, sale_price, cost_price, image_url,
-          product_variants ( id, size, color, stock )
+          product_variants ( id, size, color, stock, partner_point_stock ( quantity, partner_points ( name ) ) )
         `)
         .eq('owner_id', user.id)
         .order('name');
       
       if (error) throw error;
-      const localProducts = (localData || []) as Product[];
+      const localProducts = (localData || []).map((p: any) => ({
+        ...p,
+        product_variants: (p.product_variants || []).map((v: any) => {
+          const partnerStock = v.partner_point_stock || [];
+          const partnerAllocQty = partnerStock.reduce((acc: number, ps: any) => acc + (ps.quantity || 0), 0);
+          const partnerNames = Array.from(new Set(partnerStock.filter((ps: any) => ps.quantity > 0 && ps.partner_points?.name).map((ps: any) => ps.partner_points.name)));
+          return {
+            ...v,
+            _partner_allocated_qty: partnerAllocQty,
+            _partner_names: partnerNames
+          };
+        })
+      })) as Product[];
 
       // 2. Produtos importados do Hub
       let hubProducts: Product[] = [];
@@ -299,6 +378,8 @@ export default function POS() {
     }
   }, [grandTotal, hasSecondPayment]);
 
+  const isPartnerDirectReceive = saleOrigin === 'Ponto Parceiro' && partnerPoints.find((p:any) => p.id === checkoutPartnerPointId)?.payment_method === 'partner';
+
   const handleP1AmountChange = (val: number) => {
     const v = Math.max(0, val);
 
@@ -322,7 +403,7 @@ export default function POS() {
       if (!user) throw new Error("Não autenticado");
 
       // Registrar cliente se manual
-      let customer_id = customerMode === 'registered' ? selectedCustomerId : null;
+      let customer_id = customerMode === 'registered' ? (selectedCustomerId || null) : null;
       if (customerMode === 'manual' && manualName) {
         const { data, error } = await supabase.from('customers').insert([{
           name: manualName,
@@ -337,11 +418,11 @@ export default function POS() {
       // Validar origin
       if (!saleOrigin) throw new Error("Selecione a origem da venda");
       if (cart.length === 0) throw new Error("Carrinho vazio");
-      if (!payment1Method) throw new Error("Selecione uma Forma de Pagamento. (Caso não possua, configure na aba Ajustes/Pagamentos).");
+      if (!isPartnerDirectReceive && !payment1Method) throw new Error("Selecione uma Forma de Pagamento. (Caso não possua, configure na aba Ajustes/Pagamentos).");
 
-      const pm1 = payMethods.find((p:any) => p.id === payment1Method);
-      const pm2 = hasSecondPayment && payment2Method ? payMethods.find((p:any) => p.id === payment2Method) : null;
-      const hasInstallments = (pm1?.is_installment && installments1.length > 0) || (pm2?.is_installment && installments2.length > 0);
+      const pm1 = isPartnerDirectReceive ? null : payMethods.find((p:any) => p.id === payment1Method);
+      const pm2 = hasSecondPayment && payment2Method && !isPartnerDirectReceive ? payMethods.find((p:any) => p.id === payment2Method) : null;
+      const hasInstallments = !isPartnerDirectReceive && ((pm1?.is_installment && installments1.length > 0) || (pm2?.is_installment && installments2.length > 0));
 
       // Separar logicamente o carrinho para Split
       const localAndHubItems = cart.filter(c => !c._is_p2p);
@@ -372,16 +453,17 @@ export default function POS() {
             owner_id: user.id,
             total_amount: gTotalVal,
             discount: gDiscount,
-            payment_method: payment1Method || null,
-            payment_method_2: (hasSecondPayment && payment2Method) ? payment2Method : null,
-            payment_amount_2: gPayment2Am,
+            payment_method: payment1Method,
+            payment_method_2: (!isPartnerDirectReceive && hasSecondPayment && payment2Method) ? payment2Method : null,
+            payment_amount_2: isPartnerDirectReceive ? null : gPayment2Am,
             status: group.status,
             sale_origin: saleOrigin,
             shipping_method: shippingMethod,
             shipping_cost: gShipping,
             shipping_payer: shippingPayer,
             discount_type: discountType,
-            customer_id: customer_id || null
+            customer_id: customer_id || null,
+            partner_point_id: checkoutPartnerPointId || null
           }]).select('id').single();
 
           if (error) throw error;
@@ -392,7 +474,7 @@ export default function POS() {
             owner_id: user.id,
             sale_id: sale.id,
             product_id: c.product_id,
-            variant_id: c.variant_id,
+            variant_id: c.variant_id || null,
             quantity: c.quantity,
             unit_price: c.price,
             unit_cost: c.cost_price,
@@ -401,6 +483,29 @@ export default function POS() {
           const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsData);
           if (itemsError) throw itemsError;
 
+          // Se a origem foi Ponto Parceiro, vamos abater do estoque do parceiro
+          if (checkoutPartnerPointId && group.items.length > 0) {
+             for (const item of group.items) {
+                 // Fetch the current stock to deduct
+                 const { data: currentStock } = await supabase
+                   .from('partner_point_stock')
+                   .select('id, quantity')
+                   .eq('partner_point_id', checkoutPartnerPointId)
+                   .eq('product_id', item.product_id)
+                   .eq(item.variant_id ? 'variant_id' : 'variant_id', item.variant_id || null)
+                   .single();
+                 
+                 if (currentStock) {
+                    const newQty = Math.max(0, currentStock.quantity - item.quantity);
+                    if (newQty === 0) {
+                       await supabase.from('partner_point_stock').delete().eq('id', currentStock.id);
+                    } else {
+                       await supabase.from('partner_point_stock').update({ quantity: newQty }).eq('id', currentStock.id);
+                    }
+                 }
+             }
+          }
+
           // Itens Hub: criar fulfillment orders
           const groupHubItems = group.items.filter(c => c._is_hub);
           for (const hubItem of groupHubItems) {
@@ -408,7 +513,7 @@ export default function POS() {
             const customerPhone = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.phone || '') : (manualPhone || '');
             const { error: fulfillErr } = await supabase.from('hub_fulfillment_orders').insert({
               hub_product_id: hubItem._hub_product_id,
-              hub_variant_id: hubItem.variant_id,
+              hub_variant_id: hubItem.variant_id || null,
               supplier_id: hubItem._supplier_id,
               tenant_id: user.id,
               quantity: hubItem.quantity,
@@ -498,10 +603,27 @@ export default function POS() {
          await supabase.from('consignment_bags').update({ status: 'concluded' }).eq('id', consignmentBagId);
       }
 
+      // Atualizar crédito utilizado do participante contemplado
+      if (saleOrigin === 'Consórcio' && consortiumParticipantId && actualDiscount > 0) {
+        const part = (drawnParticipants as any[]).find((p: any) => p.id === consortiumParticipantId);
+        if (part) {
+          const newUsed = (part.credit_used || 0) + actualDiscount;
+          await supabase
+            .from('consortium_participants')
+            .update({ credit_used: newUsed })
+            .eq('id', consortiumParticipantId);
+        }
+      }
+
       return firstSaleId;
     },
-    onSuccess: () => {
+    onSuccess: (firstSaleId) => {
       toast.success('Venda concluída com sucesso!');
+      
+      if (saleOrigin === 'Ponto Parceiro' && checkoutPartnerPointId && firstSaleId && !isPartnerDirectReceive) {
+        setReleaseTicketUrl(`${window.location.origin}/liberacao/${firstSaleId}`);
+      }
+
       setCart([]);
       setObservations('');
       setManualName('');
@@ -511,6 +633,9 @@ export default function POS() {
       setSearch('');
       setStoreOrderId(null);
       setConsignmentBagId(null);
+      setCheckoutPartnerPointId(null);
+      setConsortiumParticipantId(null);
+      setConsortiumCreditRemaining(0);
       queryClient.invalidateQueries({ queryKey: ['products-pos'] });
       queryClient.invalidateQueries({ queryKey: ['sales-history'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
@@ -558,6 +683,10 @@ export default function POS() {
      const hasLocal = cart.some(c => !c._is_p2p);
      const hasP2p = cart.some(c => c._is_p2p);
      
+     if (saleOrigin === 'Ponto Parceiro' && !checkoutPartnerPointId) {
+         return toast.error("Selecione abaixo o Ponto Parceiro no qual ocorreu a venda.");
+     }
+
      if (hasLocal && hasP2p) {
         setShowMixedCartWarning(true);
         return;
@@ -672,7 +801,7 @@ export default function POS() {
              
              <div>
                 <label className="text-[10px] font-black text-primary uppercase tracking-wider mb-2 block">Origem da Venda *</label>
-                <select className="w-full h-12 border border-primary/20 text-sm rounded-xl px-4 bg-primary/5 cursor-pointer outline-none focus:ring-2 focus:ring-primary focus:border-primary text-slate-900 font-semibold transition-all shadow-sm" value={saleOrigin} onChange={e => setSaleOrigin(e.target.value)}>
+                 <select className="w-full h-12 border border-primary/20 text-sm rounded-xl px-4 bg-primary/5 cursor-pointer outline-none focus:ring-2 focus:ring-primary focus:border-primary text-slate-900 font-semibold transition-all shadow-sm" value={saleOrigin} onChange={e => { const next = e.target.value; setSaleOrigin(next); if (next !== 'Consórcio') { setConsortiumParticipantId(null); setConsortiumCreditRemaining(0); } }}>
                    <option value="">Selecione a origem...</option>
                    <option value="Loja Online">Loja Online</option>
                    <option value="Evento">Evento</option>
@@ -682,50 +811,109 @@ export default function POS() {
                    <option value="Ponto Parceiro">Ponto Parceiro</option>
                    <option value="Loja Física">Loja Física</option>
                 </select>
+                 {saleOrigin === 'Ponto Parceiro' && (
+                    <div className="mt-3 bg-purple-50 p-3 rounded-xl border border-purple-100">
+                      <label className="text-[10px] font-black text-purple-600 uppercase tracking-wider mb-2 block flex justify-between">
+                          Qual Parceiro? <span>*</span>
+                      </label>
+                      <select 
+                        className="w-full h-11 border border-purple-200 text-sm rounded-lg px-3 bg-white outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-400 shadow-sm font-semibold text-purple-900 placeholder:text-purple-300" 
+                        value={checkoutPartnerPointId || ''} 
+                        onChange={e => setCheckoutPartnerPointId(e.target.value)}
+                      >
+                         <option value="">Selecione o Parceiro...</option>
+                         {partnerPoints.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                 )}
                 {!saleOrigin && <p className="text-[10px] text-primary mt-1 font-medium">Selecione a origem da venda para continuar</p>}
              </div>
 
-             <div className="space-y-4">
-               <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 block">Cliente</label>
-                  <select className="w-full h-12 border border-slate-200 text-sm rounded-xl px-4 bg-white outline-none focus:border-primary focus:ring-2 focus:ring-primary shadow-sm font-medium" value={customerMode === 'manual' ? 'manual' : (selectedCustomerId || '')} onChange={e => {
-                     if (e.target.value === 'manual') setCustomerMode('manual');
-                     else if (e.target.value === '') { setCustomerMode('registered'); setSelectedCustomerId(''); }
-                     else { setCustomerMode('registered'); setSelectedCustomerId(e.target.value); }
-                  }}>
-                     <option value="">Selecione um Cliente (Opcional)</option>
-                     <option value="manual">➕ Digitar Nome Manualmente</option>
-                     {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-               </div>
-
-               {customerMode === 'manual' && (
-                  <>
-                    <div>
-                      <label className="text-xs font-bold text-gray-700 mb-1.5 block">Nome do Cliente</label>
-                      <Input placeholder="Opcional" className="h-10 border-gray-200" value={manualName} onChange={e => setManualName(e.target.value)}/>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-gray-700 mb-1.5 block">Telefone</label>
-                        <Input placeholder="(00) 00000-0000" className="h-10 border-gray-200" value={manualPhone} onChange={e => setManualPhone(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold text-gray-700 mb-1.5 block">@ Instagram</label>
-                        <Input placeholder="@usuario" className="h-10 border-gray-200" value={manualInstagram} onChange={e => setManualInstagram(e.target.value)} />
-                      </div>
-                    </div>
-                  </>
-               )}
-             </div>
+              <div className="space-y-4">
+                <div>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 block">Cliente</label>
+                   {saleOrigin === 'Consórcio' ? (
+                     <div className="space-y-2">
+                       <select
+                         className="w-full h-12 border border-amber-300 text-sm rounded-xl px-4 bg-amber-50 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-400 shadow-sm font-medium"
+                         value={consortiumParticipantId || ''}
+                         onChange={e => {
+                           const p = (drawnParticipants as any[]).find((x: any) => x.id === e.target.value);
+                           if (p) {
+                             setConsortiumParticipantId(p.id);
+                             const rem = (p.credit_awarded || 0) - (p.credit_used || 0);
+                             setConsortiumCreditRemaining(rem);
+                             setDiscountType('fixed');
+                             setDiscountValue(rem);
+                             if (p.customer_id) { setCustomerMode('registered'); setSelectedCustomerId(p.customer_id); }
+                           } else {
+                             setConsortiumParticipantId(null); setConsortiumCreditRemaining(0); setDiscountValue(0);
+                           }
+                         }}
+                       >
+                         <option value="">Selecione o contemplado...</option>
+                         {(drawnParticipants as any[]).map((p: any) => {
+                            const remaining = (p.credit_awarded || 0) - (p.credit_used || 0);
+                            return <option key={p.id} value={p.id}>{p.resolved_name} — Crédito: R$ {remaining.toFixed(2)}{p.consortium_name ? ` (${p.consortium_name})` : ''}</option>;
+                          })}
+                       </select>
+                       {consortiumParticipantId && consortiumCreditRemaining > 0 && (
+                         <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+                           <span className="text-lg">💎</span>
+                           <span className="text-amber-800 font-semibold">Crédito disponível: R$ {consortiumCreditRemaining.toFixed(2)}</span>
+                           <span className="text-amber-600 text-xs ml-1">(desconto automático)</span>
+                         </div>
+                       )}
+                       {(drawnParticipants as any[]).length === 0 && <p className="text-xs text-muted-foreground">Nenhum contemplado com crédito restante</p>}
+                     </div>
+                   ) : (
+                     <select className="w-full h-12 border border-slate-200 text-sm rounded-xl px-4 bg-white outline-none focus:border-primary focus:ring-2 focus:ring-primary shadow-sm font-medium" value={customerMode === 'manual' ? 'manual' : (selectedCustomerId || '')} onChange={e => {
+                        if (e.target.value === 'manual') setCustomerMode('manual');
+                        else if (e.target.value === '') { setCustomerMode('registered'); setSelectedCustomerId(''); }
+                        else { setCustomerMode('registered'); setSelectedCustomerId(e.target.value); }
+                     }}>
+                        <option value="">Selecione um Cliente (Opcional)</option>
+                        <option value="manual">➕ Digitar Nome Manualmente</option>
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                     </select>
+                   )}
+                </div>
+               {customerMode === 'manual' && saleOrigin !== 'Consórcio' && (
+                   <>
+                     <div>
+                       <label className="text-xs font-bold text-gray-700 mb-1.5 block">Nome do Cliente</label>
+                       <Input placeholder="Opcional" className="h-10 border-gray-200" value={manualName} onChange={e => setManualName(e.target.value)}/>
+                     </div>
+                     <div className="grid grid-cols-2 gap-4">
+                       <div>
+                         <label className="text-xs font-bold text-gray-700 mb-1.5 block">Telefone</label>
+                         <Input placeholder="(00) 00000-0000" className="h-10 border-gray-200" value={manualPhone} onChange={e => setManualPhone(e.target.value)} />
+                       </div>
+                       <div>
+                         <label className="text-xs font-bold text-gray-700 mb-1.5 block">@ Instagram</label>
+                         <Input placeholder="@usuario" className="h-10 border-gray-200" value={manualInstagram} onChange={e => setManualInstagram(e.target.value)} />
+                       </div>
+                     </div>
+                   </>
+                )}
+              </div>
 
              <div className="pt-2">
-                <div className="flex justify-between items-end mb-2">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Forma de Pagamento</label>
-                   {!hasSecondPayment && payMethods.length > 1 && <button className="text-[10px] text-primary font-bold hover:underline" onClick={() => setHasSecondPayment(true)}>+ Dividir pagamento</button>}
-                </div>
-                
-                <div className="space-y-2 mb-2">
+                {isPartnerDirectReceive ? (
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-2 flex items-center justify-between">
+                     <div>
+                       <p className="font-bold text-purple-900 flex items-center gap-2"><MapPin className="w-4 h-4"/> Parceiro Recebe o Pagamento</p>
+                       <p className="text-purple-700 text-xs mt-1">Este Parceiro recebe o dinheiro no balcão e esse valor virá detalhado no Acerto de Vendas do parceiro. Nenhuma cobrança deve ser feita aqui.</p>
+                     </div>
+                  </div>
+                ) : (
+                  <>
+                  <div className="flex justify-between items-end mb-2">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Forma de Pagamento</label>
+                     {!hasSecondPayment && payMethods.length > 1 && <button className="text-[10px] text-primary font-bold hover:underline" onClick={() => setHasSecondPayment(true)}>+ Dividir pagamento</button>}
+                  </div>
+                  
+                  <div className="space-y-2 mb-2">
                    <div className={`flex gap-2 ${hasSecondPayment ? 'items-center' : ''}`}>
                      <select className="w-full h-12 border border-slate-200 text-sm rounded-xl px-4 bg-white outline-none focus:border-primary focus:ring-2 focus:ring-primary shadow-sm font-medium flex-1" value={payment1Method} onChange={e => {
                            setPayment1Method(e.target.value);
@@ -808,6 +996,8 @@ export default function POS() {
                         }
                      })()}
                   </div>
+                )}
+                </>
                 )}
              </div>
 
@@ -980,8 +1170,61 @@ export default function POS() {
           </DialogContent>
         </Dialog>
 
+        {/* Ticket Release Dialog */}
+        <Dialog open={!!releaseTicketUrl} onOpenChange={(open) => !open && setReleaseTicketUrl(null)}>
+           <DialogContent className="sm:max-w-md text-center">
+              <DialogHeader>
+                <DialogTitle className="flex justify-center items-center gap-2 text-emerald-600">
+                  <CheckCircle className="w-6 h-6" /> Pagamento Confirmado!
+                </DialogTitle>
+              </DialogHeader>
+              <div className="py-4 space-y-4">
+                <p className="text-sm font-semibold text-slate-700 leading-tight">
+                  Como essa venda foi em um <span className="text-purple-600 font-bold">Ponto Parceiro</span>, gere e copie o seu Passe de Liberação para enviar ao cliente!
+                </p>
+                
+                <div className="bg-slate-50 p-4 rounded-xl border border-dashed border-slate-300 relative">
+                   <p className="text-xs text-muted-foreground mb-2 font-bold uppercase tracking-wider">Link Antifraude:</p>
+                   <Input readOnly value={releaseTicketUrl || ''} className="text-xs text-center bg-white h-10 font-mono text-slate-500 pr-10 truncate" />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={() => {
+                      if (releaseTicketUrl) {
+                        navigator.clipboard.writeText(releaseTicketUrl);
+                        toast.success("Link copiado!");
+                      }
+                    }}
+                    variant="outline"
+                    className="h-12 font-bold flex-1 border-slate-300"
+                  >
+                    Copiar
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                        let phoneStr = releaseTicketCustomerPhone.replace(/\D/g, '');
+                        if (phoneStr && phoneStr.length < 12 && phoneStr.length >= 10) phoneStr = '55' + phoneStr;
+                        const cName = releaseTicketCustomerName ? releaseTicketCustomerName.split(' ')[0] : 'Cliente';
+                        const text = `Oi ${cName}! Pagamento recebido com sucesso ✅\n\nAqui está o seu Passe de Liberação Digital.\nApresente esta tela na recepção para retirar suas peças:\n${releaseTicketUrl}`;
+                        const url = phoneStr 
+                            ? `https://wa.me/${phoneStr}?text=${encodeURIComponent(text)}`
+                            : `https://wa.me/?text=${encodeURIComponent(text)}`;
+                        window.open(url, '_blank');
+                    }}
+                    className="h-12 font-bold text-sm sm:text-base flex-[2.5] bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-[0_5px_15px_rgba(5,150,105,0.4)] transition-all hover:scale-[1.02]"
+                  >
+                    Enviar no WhatsApp
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter className="sm:justify-center">
+                 <button onClick={() => setReleaseTicketUrl(null)} className="text-xs text-slate-400 font-semibold hover:text-slate-600 uppercase border-b border-transparent hover:border-slate-400 pb-0.5">ESTOU NO LOCAL (NÃO ENVIAR LINK)</button>
+              </DialogFooter>
+           </DialogContent>
+        </Dialog>
+
       </div>
     </div>
   );
-
 }
