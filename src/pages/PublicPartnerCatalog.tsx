@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Store, ShoppingBag, MapPin, Search, ArrowRight, Minus, Plus, ShoppingCart, Loader2 } from 'lucide-react';
+import { Store, ShoppingBag, MapPin, Search, ArrowRight, Minus, Plus, ShoppingCart, Loader2, AlertCircle, PackagePlus } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function PublicPartnerCatalog() {

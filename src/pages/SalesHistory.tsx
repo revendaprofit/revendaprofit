@@ -29,6 +29,8 @@ type Sale = {
   customer_id?: string;
   sale_items?: { unit_cost: number, quantity: number }[];
   partnership_orders?: any[];
+  partner_point_id?: string;
+  partner_points?: any;
 };
 
 type SaleItem = {
