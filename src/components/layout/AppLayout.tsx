@@ -83,6 +83,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     [
       ...(isAdminMaster ? [{ name: "Franquia (Admin)", href: "/admin", icon: ShieldAlert }] : []),
       { name: "Dashboard", href: "/", icon: Home },
+      { name: "Analytics", href: "/analytics", icon: LineChart },
     ],
     [
       { name: "Minha Loja", href: "/settings", icon: Settings },
@@ -108,7 +109,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       { name: "Produtos em Destaque", href: "/featured-products", icon: Star },
       { name: "Área Secreta", href: "/secret-area", icon: Lock, disabled: true },
       { name: "Vídeo Vendedor", href: "/video-seller", icon: Video, disabled: true },
-      { name: "Analytics", href: "/analytics", icon: LineChart, disabled: true },
     ],
     [
       { name: "Historico de Vendas", href: "/sales", icon: Receipt },

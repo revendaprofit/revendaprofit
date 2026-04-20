@@ -25,7 +25,9 @@ export default function StoreSettings() {
     title_font: 'Inter', body_font: 'Inter',
     announcement_text: '', instagram_url: '', tiktok_url: '', footer_text: '',
     product_layout: 'grid',
-    featured_product_ids: [] as string[]
+    featured_product_ids: [] as string[],
+    meta_pixel_id: '',
+    ga4_measurement_id: ''
   });
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [faviconFile, setFaviconFile] = useState<File | null>(null);
@@ -63,7 +65,9 @@ export default function StoreSettings() {
         tiktok_url: settings.tiktok_url || '',
         footer_text: settings.footer_text || '',
         product_layout: settings.product_layout || 'grid',
-        featured_product_ids: settings.featured_product_ids || []
+        featured_product_ids: settings.featured_product_ids || [],
+        meta_pixel_id: settings.meta_pixel_id || '',
+        ga4_measurement_id: settings.ga4_measurement_id || ''
       });
     }
   }, [settings]);
@@ -608,6 +612,40 @@ export default function StoreSettings() {
             <div className="p-5 bg-muted/30 border-t flex justify-end">
               <Button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending} className="w-full md:w-auto shadow-sm">
                 Salvar Elementos Extras
+              </Button>
+            </div>
+         </div>
+      )}
+
+      {/* Rastreamento e Analytics */}
+      {!isLoading && (
+         <div className="bg-card border rounded-xl overflow-hidden shadow-sm flex flex-col mb-6">
+            <div className="p-5 border-b bg-muted/20 font-semibold flex items-center gap-2">
+               <Globe className="h-5 w-5 text-indigo-500" /> Rastreamento e Pixels
+            </div>
+            <div className="p-5 grid gap-6 md:grid-cols-2">
+               <div>
+                 <label className="text-sm font-semibold mb-1 block">Meta Pixel ID</label>
+                 <Input 
+                   value={formData.meta_pixel_id} 
+                   onChange={e => setFormData({...formData, meta_pixel_id: e.target.value})} 
+                   placeholder="Ex: 102938475610293" 
+                 />
+                 <p className="text-xs text-muted-foreground mt-1">Dispara PageView e InitiateCheckout no Facebook/Instagram Ads.</p>
+               </div>
+               <div>
+                 <label className="text-sm font-semibold mb-1 block">Google Analytics 4 (GA4)</label>
+                 <Input 
+                   value={formData.ga4_measurement_id} 
+                   onChange={e => setFormData({...formData, ga4_measurement_id: e.target.value})} 
+                   placeholder="Ex: G-XXXXXXXXXX" 
+                 />
+                 <p className="text-xs text-muted-foreground mt-1">ID de Métrica do Google.</p>
+               </div>
+            </div>
+            <div className="p-5 bg-muted/30 border-t flex justify-end">
+              <Button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending} className="w-full md:w-auto shadow-sm">
+                Salvar Pixels
               </Button>
             </div>
          </div>

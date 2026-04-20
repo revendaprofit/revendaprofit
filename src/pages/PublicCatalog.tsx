@@ -197,6 +197,58 @@ export default function PublicCatalog() {
     }
   });
 
+  // Track Page Views & Inject Pixels
+  useEffect(() => {
+    if (!store?.owner_id) return;
+
+    // 1. Session internal tracking
+    let sessionId = localStorage.getItem('rp_visitor_session');
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      localStorage.setItem('rp_visitor_session', sessionId);
+    }
+    supabase.from('catalog_events').insert({
+      owner_id: store.owner_id,
+      event_type: 'page_view',
+      session_id: sessionId
+    }).then();
+
+    // 2. Inject Meta Pixel
+    if (store.meta_pixel_id) {
+       let f = window as any;
+       if (!f.fbq) {
+          f.fbq = function() {
+            f.fbq.callMethod ? f.fbq.callMethod.apply(f.fbq, arguments) : f.fbq.queue.push(arguments)
+          };
+          if(!f._fbq) f._fbq=f.fbq;
+          f.fbq.push=f.fbq; f.fbq.loaded=!0; f.fbq.version='2.0';
+          f.fbq.queue=[];
+          const script = document.createElement('script');
+          script.async = true; script.src='https://connect.facebook.net/en_US/fbevents.js';
+          document.head.appendChild(script);
+       }
+       f.fbq('init', store.meta_pixel_id);
+       f.fbq('track', 'PageView');
+    }
+
+    // 3. Inject GA4
+    if (store.ga4_measurement_id) {
+       const w = window as any;
+       w.dataLayer = w.dataLayer || [];
+       function gtag(){w.dataLayer.push(arguments);}
+       w.gtag = gtag;
+       if (!document.getElementById('ga4-script')) {
+          const gaScript = document.createElement('script');
+          gaScript.id = 'ga4-script';
+          gaScript.async = true;
+          gaScript.src = `https://www.googletagmanager.com/gtag/js?id=${store.ga4_measurement_id}`;
+          document.head.appendChild(gaScript);
+          w.gtag('js', new Date());
+       }
+       w.gtag('config', store.ga4_measurement_id);
+    }
+  }, [store?.owner_id, store?.meta_pixel_id, store?.ga4_measurement_id]);
+
   // Carrega produtos daquela loja específica (onde marketing_status = 'active')
   const { data: localProducts = [], isLoading: productsLoading } = useQuery({
     queryKey: ['public-products', store?.owner_id],
@@ -407,6 +459,42 @@ export default function PublicCatalog() {
 
   const handleAddToCart = (product: any, variant: any) => {
     if (variant.stock <= 0) return;
+    
+    // Track internal Add To Cart
+    const sessionId = localStorage.getItem('rp_visitor_session');
+    if (store?.owner_id && sessionId) {
+       supabase.from('catalog_events').insert({
+          owner_id: store.owner_id,
+          event_type: 'add_to_cart',
+          product_id: product.id,
+          session_id: sessionId
+       }).then();
+    }
+    
+    // Track Pixel Add To Cart
+    if (store?.meta_pixel_id) {
+       let f = window as any;
+       if (f.fbq) {
+          f.fbq('track', 'AddToCart', {
+             value: product.sale_price,
+             currency: 'BRL',
+             content_ids: [product.id],
+             content_name: product.name,
+             content_type: 'product'
+          });
+       }
+    }
+    if (store?.ga4_measurement_id) {
+       let w = window as any;
+       if (w.gtag) {
+          w.gtag('event', 'add_to_cart', {
+            currency: 'BRL',
+            value: product.sale_price,
+            items: [{ item_id: product.id, item_name: product.name, price: product.sale_price }]
+          });
+       }
+    }
+
     setCart(prev => {
       const existing = prev.find(c => c.variant_id === variant.id);
       if (existing) {
@@ -430,6 +518,38 @@ export default function PublicCatalog() {
   const finishPurchaseWhatsApp = async () => {
     if (!store.whatsapp) return toast.error('O lojista não configurou um WhatsApp para receber pedidos.');
     if (!customerName || !customerWhatsapp) return toast.error('Preencha seu nome e WhatsApp para continuarmos.');
+
+    // Track internal Initiate Checkout
+    const sessionId = localStorage.getItem('rp_visitor_session');
+    if (store?.owner_id && sessionId) {
+       supabase.from('catalog_events').insert({
+          owner_id: store.owner_id,
+          event_type: 'initiate_checkout',
+          session_id: sessionId
+       }).then();
+    }
+    
+    // Track Pixel Initiate Checkout
+    if (store?.meta_pixel_id) {
+       let f = window as any;
+       if (f.fbq) {
+          f.fbq('track', 'InitiateCheckout', {
+             value: totalCart,
+             currency: 'BRL',
+             num_items: totalItems
+          });
+       }
+    }
+    if (store?.ga4_measurement_id) {
+       let w = window as any;
+       if (w.gtag) {
+          w.gtag('event', 'begin_checkout', {
+            currency: 'BRL',
+            value: totalCart,
+            items: cart.map(c => ({ item_id: c.product.id, item_name: c.product.name, price: c.product.sale_price, quantity: c.qty }))
+          });
+       }
+    }
 
     setIsSubmitting(true);
     try {

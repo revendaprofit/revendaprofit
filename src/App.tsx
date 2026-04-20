@@ -33,6 +33,7 @@ import PartnerCartaz from "./pages/PartnerCartaz";
 import ReleaseTicket from "./pages/ReleaseTicket";
 import BazarSellerSubmit from "./pages/BazarSellerSubmit";
 import BazarAdmin from "./pages/BazarAdmin";
+import Analytics from "./pages/Analytics";
 
 // Pages - Supplier
 import SupplierDashboard from "./pages/supplier/SupplierDashboard";
@@ -101,6 +102,7 @@ const AppRoutes = () => (
     
     {/* Store Owner Routes */}
     <Route path="/" element={<ProtectedRoute><AppLayout><SmartRedirect /></AppLayout></ProtectedRoute>} />
+    <Route path="/analytics" element={<ProtectedRoute><AppLayout><Analytics /></AppLayout></ProtectedRoute>} />
     <Route path="/pos" element={<ProtectedRoute><AppLayout><POS /></AppLayout></ProtectedRoute>} />
     <Route path="/sales" element={<ProtectedRoute><AppLayout><SalesHistory /></AppLayout></ProtectedRoute>} />
     <Route path="/installments" element={<ProtectedRoute><AppLayout><InstallmentsReport /></AppLayout></ProtectedRoute>} />
