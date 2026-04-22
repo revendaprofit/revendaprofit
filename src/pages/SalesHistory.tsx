@@ -31,6 +31,7 @@ type Sale = {
   partnership_orders?: any[];
   partner_point_id?: string;
   partner_points?: any;
+  sale_installments?: { status: string, amount: number, payment_method_id: string }[];
 };
 
 type SaleItem = {
@@ -73,6 +74,7 @@ export default function SalesHistory() {
           sale_origin, shipping_method, shipping_cost, discount_type, shipping_payer, customer_id, partner_point_id,
           customers ( name ),
           partner_points ( name, commission_arara ),
+          sale_installments ( status, amount, payment_method_id ),
           sale_items ( product_id, unit_cost, quantity, products ( name, cost_price ) ),
           partnership_orders ( product_id, partnership_settlements ( amount_owed, cost_slice, profit_slice ) )
         `)
@@ -163,6 +165,37 @@ export default function SalesHistory() {
       case 'link': return 'Link de Pagamento';
       default: return method;
     }
+  };
+
+  const getSalePaymentMethods = (sale: Sale) => {
+    // Se não houver parcelas, ou se as parcelas não estiverem pagas, mostrar o método original
+    const paidInstallments = sale.sale_installments?.filter(i => (i.status === 'paid' || i.status === 'completed') && i.payment_method_id) || [];
+    
+    if (paidInstallments.length === 0) {
+      let label = getPaymentLabel(sale.payment_method);
+      if (sale.payment_method_2) label += ` + ${getPaymentLabel(sale.payment_method_2)}`;
+      return label;
+    }
+
+    // Se houver parcelas pagas, agrupar os métodos
+    const methods = new Set<string>();
+    
+    // Adicionar métodos de pagamentos diretos que não são a prazo
+    // (Apenas se não for o método principal de parcelamento)
+    const pm1 = payMethods.find((p:any) => p.id === sale.payment_method);
+    if (pm1 && !pm1.is_installment) methods.add(pm1.name);
+    else if (!pm1 && !['installment', 'prazo'].some(s => sale.payment_method.toLowerCase().includes(s))) methods.add(getPaymentLabel(sale.payment_method));
+
+    const pm2 = payMethods.find((p:any) => p.id === sale.payment_method_2);
+    if (pm2 && !pm2.is_installment) methods.add(pm2.name);
+    else if (sale.payment_method_2 && !pm2) methods.add(getPaymentLabel(sale.payment_method_2));
+
+    // Adicionar métodos das parcelas
+    paidInstallments.forEach(inst => {
+      methods.add(getPaymentLabel(inst.payment_method_id));
+    });
+
+    return Array.from(methods).join(' + ');
   };
 
   const getStatusBadge = (status: string) => {
@@ -381,7 +414,7 @@ export default function SalesHistory() {
                     {new Date(sale.created_at).toLocaleString('pt-BR')}
                   </TableCell>
                   <TableCell>{sale.customers?.name || <span className="text-muted-foreground italic">Anônimo</span>}</TableCell>
-                  <TableCell>{getPaymentLabel(sale.payment_method)}</TableCell>
+                  <TableCell>{getSalePaymentMethods(sale)}</TableCell>
                   <TableCell>
                     <span className="font-bold whitespace-nowrap">R$ {Number(sale.total_amount).toFixed(2)}</span>
                   </TableCell>
@@ -445,8 +478,7 @@ export default function SalesHistory() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Método(s) de Pagamento:</span>
                   <span className="font-medium text-right">
-                    {getPaymentLabel(selectedSale.payment_method)}
-                    {selectedSale.payment_method_2 && ` + ${getPaymentLabel(selectedSale.payment_method_2)}`}
+                    {getSalePaymentMethods(selectedSale)}
                   </span>
                 </div>
                 {Number(selectedSale.discount) > 0 && (
