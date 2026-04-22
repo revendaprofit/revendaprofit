@@ -6,6 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Search, Clock, CheckCircle, AlertTriangle, DollarSign, Download, Send, Edit2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, isBefore, startOfToday } from 'date-fns';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 export default function InstallmentsReport() {
   const queryClient = useQueryClient();
@@ -15,6 +22,10 @@ export default function InstallmentsReport() {
   const [dueDateTo, setDueDateTo] = useState('');
   const [paidDateFrom, setPaidDateFrom] = useState('');
   const [paidDateTo, setPaidDateTo] = useState('');
+  
+  const [editingInstallment, setEditingInstallment] = useState<any>(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
 
   const { data: installments = [], isLoading } = useQuery({
     queryKey: ['installments-report'],
@@ -135,6 +146,44 @@ export default function InstallmentsReport() {
         toast.success("Parcela atualizada!");
      }
   });
+
+  const editMutation = useMutation({
+     mutationFn: async ({ id, amount, due_date }: { id: string, amount: number, due_date: string }) => {
+        const { error } = await supabase.from('sale_installments').update({ amount, due_date }).eq('id', id);
+        if (error) throw error;
+     },
+     onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['installments-report'] });
+        queryClient.invalidateQueries({ queryKey: ['sales-history'] });
+        toast.success("Parcela editada com sucesso!");
+        setEditingInstallment(null);
+     }
+  });
+
+  const handleOpenEdit = (inst: any) => {
+    setEditingInstallment(inst);
+    setEditAmount(inst.amount.toString());
+    setEditDueDate(inst.due_date);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingInstallment) return;
+    const amountNum = parseFloat(editAmount.replace(',','.'));
+    if (isNaN(amountNum) || amountNum <= 0) {
+      toast.error("Valor inválido");
+      return;
+    }
+    if (!editDueDate) {
+      toast.error("Data de vencimento inválida");
+      return;
+    }
+
+    editMutation.mutate({
+      id: editingInstallment.id,
+      amount: amountNum,
+      due_date: editDueDate
+    });
+  };
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
@@ -296,7 +345,10 @@ export default function InstallmentsReport() {
                                  </button>
                                 </>
                               )}
-                              <button className="text-[10px] font-bold flex items-center gap-1 text-gray-400 hover:text-gray-900">
+                              <button 
+                                className="text-[10px] font-bold flex items-center gap-1 text-gray-400 hover:text-gray-900"
+                                onClick={() => handleOpenEdit(inst)}
+                              >
                                 <Edit2 className="w-3 h-3" /> <span className="sr-only sm:not-sr-only">Editar</span>
                               </button>
                            </div>
@@ -308,6 +360,45 @@ export default function InstallmentsReport() {
           </table>
         </div>
       </div>
+
+      <Dialog open={!!editingInstallment} onOpenChange={(open) => !open && setEditingInstallment(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Parcela</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-semibold mb-1 block">Valor da Parcela</label>
+              <Input
+                type="number"
+                step="0.01"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold mb-1 block">Data de Vencimento</label>
+              <Input
+                type="date"
+                value={editDueDate}
+                onChange={(e) => setEditDueDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingInstallment(null)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSaveEdit}
+              disabled={editMutation.isPending}
+            >
+              {editMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
