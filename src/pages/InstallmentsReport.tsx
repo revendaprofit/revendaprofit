@@ -26,6 +26,11 @@ export default function InstallmentsReport() {
   const [editingInstallment, setEditingInstallment] = useState<any>(null);
   const [editAmount, setEditAmount] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
+  const [editPaymentMethodId, setEditPaymentMethodId] = useState('');
+
+  // Modal "Marcar como Pago"
+  const [payingInstallment, setPayingInstallment] = useState<any>(null);
+  const [payPaymentMethodId, setPayPaymentMethodId] = useState('');
 
   const { data: installments = [], isLoading } = useQuery({
     queryKey: ['installments-report'],
@@ -36,7 +41,7 @@ export default function InstallmentsReport() {
       const { data, error } = await supabase
         .from('sale_installments')
         .select(`
-          id, amount, due_date, status, sale_id, paid_at,
+          id, amount, due_date, status, sale_id, paid_at, payment_method_id, fee_amount,
           sales (
             id, payment_method, payment_method_2,
             customers (id, name, phone),
@@ -60,11 +65,17 @@ export default function InstallmentsReport() {
     }
   });
 
-  const getPaymentName = (sale: any) => {
+  const getPaymentName = (inst: any) => {
+    // Se a parcela tem forma de pagamento própria, usar ela
+    if (inst.payment_method_id && payMethods) {
+      const pm = payMethods.find((p: any) => p.id === inst.payment_method_id);
+      if (pm) return pm.name;
+    }
+    // Fallback: inferir da venda
+    const sale = inst.sales;
     if (!sale || !payMethods) return 'A prazo';
-    const pm1 = payMethods.find(p => p.id === sale.payment_method);
-    const pm2 = payMethods.find(p => p.id === sale.payment_method_2);
-    // Rough guess since we don't map installment directly to payment method 1 or 2
+    const pm1 = payMethods.find((p: any) => p.id === sale.payment_method);
+    const pm2 = payMethods.find((p: any) => p.id === sale.payment_method_2);
     if (pm1?.name && pm1.name.toLowerCase().includes('prazo')) return pm1.name;
     if (pm2?.name && pm2.name.toLowerCase().includes('prazo')) return pm2.name;
     return pm1?.name || 'A prazo';
@@ -125,36 +136,68 @@ export default function InstallmentsReport() {
   }, [installments, filterStatus, search, today, dueDateFrom, dueDateTo, paidDateFrom, paidDateTo]);
 
   const updateMutation = useMutation({
-     mutationFn: async ({ id, status, sale_id }: { id: string, status: string, sale_id: string }) => {
+     mutationFn: async ({ id, status, sale_id, payment_method_id, fee_amount }: { id: string, status: string, sale_id: string, payment_method_id?: string, fee_amount?: number }) => {
         const payload: any = { status };
-        if (status === 'paid' || status === 'completed') payload.paid_at = new Date().toISOString();
-        else payload.paid_at = null;
+        if (status === 'paid' || status === 'completed') {
+          payload.paid_at = new Date().toISOString();
+          if (payment_method_id) payload.payment_method_id = payment_method_id;
+          if (fee_amount !== undefined) payload.fee_amount = fee_amount;
+        } else {
+          payload.paid_at = null;
+          payload.payment_method_id = null;
+          payload.fee_amount = 0;
+        }
 
         const { error } = await supabase.from('sale_installments').update(payload).eq('id', id);
         if (error) throw error;
-        
-        // Check if all installments for this sale are paid
-        const { data: allInsts } = await supabase.from('sale_installments').select('status').eq('sale_id', sale_id);
+
+        // Recalcular payment_fee_amount na venda baseado nas parcelas pagas
+        const { data: allInsts } = await supabase.from('sale_installments').select('status, fee_amount').eq('sale_id', sale_id);
         if (allInsts) {
            const allPaid = allInsts.every(i => i.status === 'paid' || i.status === 'completed');
-           await supabase.from('sales').update({ status: allPaid ? 'completed' : 'installment' }).eq('id', sale_id);
+           const totalFees = allInsts.reduce((acc, i) => acc + (Number(i.fee_amount) || 0), 0);
+           await supabase.from('sales').update({ 
+             status: allPaid ? 'completed' : 'installment',
+             payment_fee_amount: totalFees
+           }).eq('id', sale_id);
         }
      },
      onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['installments-report'] });
         queryClient.invalidateQueries({ queryKey: ['sales-history'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
         toast.success("Parcela atualizada!");
+        setPayingInstallment(null);
      }
   });
 
   const editMutation = useMutation({
-     mutationFn: async ({ id, amount, due_date }: { id: string, amount: number, due_date: string }) => {
-        const { error } = await supabase.from('sale_installments').update({ amount, due_date }).eq('id', id);
+     mutationFn: async ({ id, amount, due_date, payment_method_id, sale_id }: { id: string, amount: number, due_date: string, payment_method_id?: string, sale_id: string }) => {
+        const payload: any = { amount, due_date };
+        if (payment_method_id !== undefined) {
+          payload.payment_method_id = payment_method_id || null;
+          // Recalcular fee se tiver forma de pagamento
+          if (payment_method_id && payMethods) {
+            const pm = payMethods.find((p: any) => p.id === payment_method_id);
+            payload.fee_amount = pm ? (amount * (Number(pm.fee_percentage) || 0) / 100) : 0;
+          } else {
+            payload.fee_amount = 0;
+          }
+        }
+        const { error } = await supabase.from('sale_installments').update(payload).eq('id', id);
         if (error) throw error;
+
+        // Recalcular fees totais na venda
+        const { data: allInsts } = await supabase.from('sale_installments').select('fee_amount').eq('sale_id', sale_id);
+        if (allInsts) {
+          const totalFees = allInsts.reduce((acc, i) => acc + (Number(i.fee_amount) || 0), 0);
+          await supabase.from('sales').update({ payment_fee_amount: totalFees }).eq('id', sale_id);
+        }
      },
      onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['installments-report'] });
         queryClient.invalidateQueries({ queryKey: ['sales-history'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
         toast.success("Parcela editada com sucesso!");
         setEditingInstallment(null);
      }
@@ -164,6 +207,26 @@ export default function InstallmentsReport() {
     setEditingInstallment(inst);
     setEditAmount(inst.amount.toString());
     setEditDueDate(inst.due_date);
+    setEditPaymentMethodId(inst.payment_method_id || '');
+  };
+
+  const handleOpenPay = (inst: any) => {
+    setPayingInstallment(inst);
+    setPayPaymentMethodId(payMethods && payMethods.length > 0 ? payMethods[0].id : '');
+  };
+
+  const handleConfirmPay = () => {
+    if (!payingInstallment) return;
+    if (!payPaymentMethodId) { toast.error('Selecione a forma de pagamento'); return; }
+    const pm = payMethods?.find((p: any) => p.id === payPaymentMethodId);
+    const feeAmount = pm ? (Number(payingInstallment.amount) * (Number(pm.fee_percentage) || 0) / 100) : 0;
+    updateMutation.mutate({
+      id: payingInstallment.id,
+      status: 'paid',
+      sale_id: payingInstallment.sale_id,
+      payment_method_id: payPaymentMethodId,
+      fee_amount: feeAmount
+    });
   };
 
   const handleSaveEdit = () => {
@@ -181,7 +244,9 @@ export default function InstallmentsReport() {
     editMutation.mutate({
       id: editingInstallment.id,
       amount: amountNum,
-      due_date: editDueDate
+      due_date: editDueDate,
+      payment_method_id: editPaymentMethodId,
+      sale_id: editingInstallment.sale_id
     });
   };
 
@@ -317,20 +382,21 @@ export default function InstallmentsReport() {
                            {statusChip}
                         </td>
                         <td className="px-6 py-4 text-gray-500 text-xs">
-                           {getPaymentName(inst.sales)}
+                           {getPaymentName(inst)}
+                           {inst.fee_amount > 0 && <span className="block text-[9px] text-red-400">Taxa: R$ {Number(inst.fee_amount).toFixed(2).replace('.',',')}</span>}
                         </td>
                         <td className="px-6 py-4">
                            <p className="text-xs text-gray-500 max-w-[200px] truncate" title={productsString}>{productsString}</p>
                         </td>
                         <td className="px-6 py-4 text-right pr-6">
-                           <div className="flex items-center justify-end gap-3 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                           <div className="flex items-center justify-end gap-3">
                               {isPaid ? (
                                 <button className="text-[10px] font-bold flex items-center gap-1 text-gray-500 hover:text-gray-900" onClick={() => updateMutation.mutate({ id: inst.id, status: 'pending', sale_id: inst.sale_id })}>
                                   <RotateCcw className="w-3 h-3" /> Desfazer
                                 </button>
                               ) : (
                                 <>
-                                 <button className="text-[10px] font-bold flex items-center gap-1 text-emerald-600 hover:text-emerald-700" onClick={() => updateMutation.mutate({ id: inst.id, status: 'paid', sale_id: inst.sale_id })}>
+                                 <button className="text-[10px] font-bold flex items-center gap-1 text-emerald-600 hover:text-emerald-700" onClick={() => handleOpenPay(inst)}>
                                    <CheckCircle className="w-3 h-3" /> Pago
                                  </button>
                                  <button 
@@ -366,39 +432,100 @@ export default function InstallmentsReport() {
           <DialogHeader>
             <DialogTitle>Editar Parcela</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-semibold mb-1 block">Valor da Parcela</label>
-              <Input
-                type="number"
-                step="0.01"
-                value={editAmount}
-                onChange={(e) => setEditAmount(e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-semibold mb-1 block">Data de Vencimento</label>
-              <Input
-                type="date"
-                value={editDueDate}
-                onChange={(e) => setEditDueDate(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingInstallment(null)}>
-              Cancelar
-            </Button>
-            <Button 
-              onClick={handleSaveEdit}
-              disabled={editMutation.isPending}
-            >
-              {editMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+           <div className="space-y-4 py-4">
+             <div>
+               <label className="text-sm font-semibold mb-1 block">Valor da Parcela</label>
+               <Input
+                 type="number"
+                 step="0.01"
+                 value={editAmount}
+                 onChange={(e) => setEditAmount(e.target.value)}
+                 placeholder="0.00"
+               />
+             </div>
+             <div>
+               <label className="text-sm font-semibold mb-1 block">Data de Vencimento</label>
+               <Input
+                 type="date"
+                 value={editDueDate}
+                 onChange={(e) => setEditDueDate(e.target.value)}
+               />
+             </div>
+             <div>
+               <label className="text-sm font-semibold mb-1 block">Forma de Pagamento Recebida</label>
+               <select
+                 className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:ring-1 focus:ring-primary"
+                 value={editPaymentMethodId}
+                 onChange={(e) => setEditPaymentMethodId(e.target.value)}
+               >
+                 <option value="">— Não definida —</option>
+                 {payMethods?.map((pm: any) => (
+                   <option key={pm.id} value={pm.id}>{pm.name} {pm.fee_percentage > 0 ? `(${pm.fee_percentage}% taxa)` : ''}</option>
+                 ))}
+               </select>
+             </div>
+           </div>
+           <DialogFooter>
+             <Button variant="outline" onClick={() => setEditingInstallment(null)}>
+               Cancelar
+             </Button>
+             <Button 
+               onClick={handleSaveEdit}
+               disabled={editMutation.isPending}
+             >
+               {editMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
+             </Button>
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
+
+       {/* Modal Marcar como Pago */}
+       <Dialog open={!!payingInstallment} onOpenChange={(open) => !open && setPayingInstallment(null)}>
+         <DialogContent>
+           <DialogHeader>
+             <DialogTitle>Confirmar Pagamento</DialogTitle>
+           </DialogHeader>
+           <div className="space-y-4 py-4">
+             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+               <p className="text-sm text-emerald-800">Parcela de <strong>R$ {payingInstallment ? Number(payingInstallment.amount).toFixed(2).replace('.',',') : '0,00'}</strong></p>
+               <p className="text-xs text-emerald-600 mt-1">Selecione como o pagamento foi recebido:</p>
+             </div>
+             <div>
+               <label className="text-sm font-semibold mb-1 block">Forma de Pagamento</label>
+               <select
+                 className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:ring-1 focus:ring-primary"
+                 value={payPaymentMethodId}
+                 onChange={(e) => setPayPaymentMethodId(e.target.value)}
+               >
+                 <option value="">— Selecione —</option>
+                 {payMethods?.map((pm: any) => (
+                   <option key={pm.id} value={pm.id}>{pm.name} {pm.fee_percentage > 0 ? `(${pm.fee_percentage}% taxa)` : ''}</option>
+                 ))}
+               </select>
+             </div>
+             {payPaymentMethodId && (() => {
+               const pm = payMethods?.find((p: any) => p.id === payPaymentMethodId);
+               const fee = pm && payingInstallment ? (Number(payingInstallment.amount) * (Number(pm.fee_percentage) || 0) / 100) : 0;
+               return fee > 0 ? (
+                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
+                   <p className="text-red-700">Taxa da maquininha: <strong>R$ {fee.toFixed(2).replace('.',',')}</strong></p>
+                   <p className="text-red-500 text-xs mt-0.5">Essa taxa será descontada do lucro líquido no histórico.</p>
+                 </div>
+               ) : null;
+             })()}
+           </div>
+           <DialogFooter>
+             <Button variant="outline" onClick={() => setPayingInstallment(null)}>Cancelar</Button>
+             <Button 
+               className="bg-emerald-600 hover:bg-emerald-700 text-white"
+               onClick={handleConfirmPay}
+               disabled={updateMutation.isPending}
+             >
+               {updateMutation.isPending ? 'Salvando...' : 'Confirmar Pagamento'}
+             </Button>
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
     </div>
   );
 }

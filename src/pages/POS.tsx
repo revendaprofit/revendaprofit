@@ -448,6 +448,11 @@ export default function POS() {
           const gShipping = shippingCost * ratio;
           const gPayment2Am = hasSecondPayment && payment2Amount ? payment2Amount * ratio : null;
 
+          // Calcular taxas das formas de pagamento (fee_percentage)
+          const p1Amount = hasSecondPayment ? (payment1Amount * ratio) : gTotalVal;
+          const fee1 = (!isPartnerDirectReceive && pm1 && !pm1.is_installment) ? (p1Amount * (Number(pm1.fee_percentage) || 0) / 100) : 0;
+          const fee2 = (!isPartnerDirectReceive && pm2 && !pm2.is_installment && gPayment2Am) ? (gPayment2Am * (Number(pm2.fee_percentage) || 0) / 100) : 0;
+
           // Inserir venda
           const { data: sale, error } = await supabase.from('sales').insert([{
             owner_id: user.id,
@@ -456,6 +461,8 @@ export default function POS() {
             payment_method: payment1Method,
             payment_method_2: (!isPartnerDirectReceive && hasSecondPayment && payment2Method) ? payment2Method : null,
             payment_amount_2: isPartnerDirectReceive ? null : gPayment2Am,
+            payment_fee_amount: fee1,
+            payment_fee_amount_2: fee2,
             status: group.status,
             sale_origin: saleOrigin,
             shipping_method: shippingMethod,
