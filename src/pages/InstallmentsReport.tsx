@@ -23,6 +23,13 @@ export default function InstallmentsReport() {
   const [paidDateFrom, setPaidDateFrom] = useState('');
   const [paidDateTo, setPaidDateTo] = useState('');
   
+  interface PaymentMethod {
+    id: string;
+    name: string;
+    is_installment: boolean;
+    fee_percentage: number;
+  }
+  
   const [editingInstallment, setEditingInstallment] = useState<any>(null);
   const [editAmount, setEditAmount] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
@@ -60,8 +67,8 @@ export default function InstallmentsReport() {
     queryFn: async () => {
        const user = (await supabase.auth.getUser()).data.user;
        if (!user) return [];
-       const { data } = await supabase.from('payment_methods').select('id, name, is_installment');
-       return data || [];
+       const { data } = await supabase.from('payment_methods').select('id, name, is_installment, fee_percentage');
+       return (data || []) as PaymentMethod[];
     }
   });
 

@@ -249,7 +249,7 @@ export default function Analytics() {
                               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
                           </Pie>
-                          <RechartsTooltip formatter={(v: number) => `R$ ${v.toFixed(2)}`} />
+                          <RechartsTooltip formatter={(value: any) => `R$ ${Number(value).toFixed(2)}`} />
                         </PieChart>
                      </ResponsiveContainer>
                    </div>

@@ -144,7 +144,7 @@ export default function PartnerPointAnalyticsTab({ pointId }: { pointId: string 
                  <p className="bg-rose-50 p-3 rounded-lg border border-rose-200 text-rose-800">As pessoas escaneiam, vão até o WhatsApp, mas a venda não conclui. Pode haver falha no atendimento do seu lojista (demora para responder o WhatsApp) ou na forma de pagamento.</p>
               ) : myNetProfit <= 0 && purchases > 0 ? (
                  <p className="bg-rose-50 p-3 rounded-lg border border-rose-200 text-rose-800">Você está tendo vendas, mas o lucro está negativando. A comissão que você paga ao parceiro ou o frete estão corroendo sua margem.</p>
-              ) : parseFloat(stockTurnoverRate) < 10 && totalSentQty > 5 ? (
+              ) : Number(stockTurnoverRate) < 10 && totalSentQty > 5 ? (
                  <p className="bg-blue-50 p-3 rounded-lg border border-blue-200 text-blue-800">Muitos itens parados. Considere recolher as peças não movimentadas e trocar o mix do parceiro para itens de menor valor.</p>
               ) : (
                  <p className="bg-emerald-50 p-3 rounded-lg border border-emerald-200 text-emerald-800 font-bold">Parceria saudável! O ponto de venda está se pagando.</p>
