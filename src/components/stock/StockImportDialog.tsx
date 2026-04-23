@@ -6,14 +6,16 @@ import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import ImportReviewStep, { ImportReviewItem, normalizeForComparison } from './ImportReviewStep';
 
 export default function StockImportDialog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState(1); // 1 = Upload, 2 = Mapping
+  const [step, setStep] = useState(1); // 1 = Upload, 2 = Mapping, 3 = Review
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [fileKeys, setFileKeys] = useState<string[]>([]);
   const [status, setStatus] = useState('');
+  const [reviewItems, setReviewItems] = useState<ImportReviewItem[]>([]);
   
   const [mapping, setMapping] = useState({
     name: '',
@@ -40,6 +42,7 @@ export default function StockImportDialog() {
       setParsedData([]);
       setFileKeys([]);
       setStatus('');
+      setReviewItems([]);
     }
   }, [open]);
 
@@ -96,15 +99,44 @@ export default function StockImportDialog() {
     reader.readAsArrayBuffer(file);
   };
 
-  const executeImport = async () => {
+  // Step 2 → Step 3: Analyze duplicates and build review list
+  const analyzeAndReview = async () => {
     if (!mapping.name) return toast.error('É obrigatório mapear a coluna "Nome do Produto".');
     setLoading(true);
-    setStatus('Iniciando importação...');
+    setStatus('Verificando produtos existentes...');
 
     try {
       const user = (await supabase.auth.getUser()).data.user;
       if (!user) throw new Error('Não autenticado');
 
+      // Fetch all existing products with their variants
+      const { data: existingProducts } = await supabase
+        .from('products')
+        .select('id, name, total_stock, cost_price, sale_price, category_id, supplier_id, subcategory_id')
+        .eq('owner_id', user.id)
+        .neq('marketing_status', 'archived');
+
+      const { data: existingVariants } = await supabase
+        .from('product_variants')
+        .select('id, product_id, size, color, stock, sku')
+        .eq('owner_id', user.id);
+
+      // Build lookup map: normalized name → product + variants
+      const existingMap = new Map<string, { product: any; variants: any[] }>();
+      const skuMap = new Map<string, { product: any; variants: any[] }>();
+
+      (existingProducts || []).forEach(p => {
+        const normalized = normalizeForComparison(p.name);
+        const productVariants = (existingVariants || []).filter(v => v.product_id === p.id);
+        const entry = { product: p, variants: productVariants };
+        existingMap.set(normalized, entry);
+        // Also build SKU map
+        productVariants.forEach(v => {
+          if (v.sku) skuMap.set(normalizeForComparison(v.sku), entry);
+        });
+      });
+
+      // Resolve categories, suppliers, subcategories
       const { data: existingCategories } = await supabase.from('categories').select('id, name');
       const { data: existingSuppliers } = await supabase.from('suppliers').select('id, name');
       const { data: existingSubcategories } = await supabase.from('subcategories').select('id, name');
@@ -113,12 +145,11 @@ export default function StockImportDialog() {
       const supplierMap: Record<string, string> = {};
       const subcategoryMap: Record<string, string> = {};
 
-      setStatus('Mapeando Categorias, Subcategorias e Fornecedores...');
-      
+      // Map categories (no auto-create)
       const newCats = new Set<string>();
       const newSups = new Set<string>();
       const newSubs = new Set<string>();
-      
+
       parsedData.forEach(row => {
         if (mapping.category_text && row[mapping.category_text]) newCats.add(String(row[mapping.category_text]).trim());
         if (mapping.supplier_text && row[mapping.supplier_text]) newSups.add(String(row[mapping.supplier_text]).trim());
@@ -128,7 +159,7 @@ export default function StockImportDialog() {
       for (const cat of Array.from(newCats)) {
         const found = existingCategories?.find(c => c.name.toLowerCase() === cat.toLowerCase());
         if (found) categoryMap[cat] = found.id;
-        // Se a categoria não existir, o sistema ignorará e atribuirá nulidade.
+        // Não cria categorias novas - usuário deve cadastrar manualmente
       }
 
       for (const sup of Array.from(newSups)) {
@@ -143,9 +174,10 @@ export default function StockImportDialog() {
       for (const sub of Array.from(newSubs)) {
         const found = existingSubcategories?.find(s => s.name.toLowerCase() === sub.toLowerCase());
         if (found) subcategoryMap[sub] = found.id;
-        // Se a subcategoria não existir, o sistema ignorará e atribuirá nulidade.
+        // Não cria subcategorias novas
       }
 
+      // Group parsed data by product name
       const productsGrouped: Record<string, any[]> = {};
       parsedData.forEach(row => {
          const name = row[mapping.name];
@@ -154,73 +186,196 @@ export default function StockImportDialog() {
          productsGrouped[name].push(row);
       });
 
-      const productsToInsert = [];
-      const productNameToIds: Record<string, string> = {};
+      // Build review items
+      setStatus('Analisando duplicatas...');
+      const items: ImportReviewItem[] = [];
 
-      setStatus('Compilando Estrutura de Produtos...');
       for (const [name, rows] of Object.entries(productsGrouped)) {
-         const generatedId = crypto.randomUUID();
-         productNameToIds[name] = generatedId;
-         
-         const firstRow = rows[0];
-         const cost = parseFloat((firstRow[mapping.cost_price] || '0').toString().replace(',','.')) || 0;
-         const sale = parseFloat((firstRow[mapping.sale_price] || '0').toString().replace(',','.')) || 0;
+        const normalizedName = normalizeForComparison(name);
+        const firstRow = rows[0];
+        
+        // Check for existing match by name first, then by SKU
+        let existingEntry = existingMap.get(normalizedName);
+        if (!existingEntry && mapping.variant_sku) {
+          const sku = String(firstRow[mapping.variant_sku] || '').trim();
+          if (sku) existingEntry = skuMap.get(normalizeForComparison(sku));
+        }
 
-         productsToInsert.push({
-            id: generatedId,
+        // Build file variants
+        const fileVariants = rows.map(row => {
+          const stockStr = mapping.variant_stock ? String(row[mapping.variant_stock]).trim() : '0';
+          const stockCount = parseInt(stockStr.replace(/\D/g, '')) || 0;
+          return {
+            size: mapping.variant_size ? String(row[mapping.variant_size] || 'Único') : 'Único',
+            color: mapping.variant_color ? String(row[mapping.variant_color] || 'Padrão') : 'Padrão',
+            stock: stockCount,
+            sku: mapping.variant_sku ? String(row[mapping.variant_sku] || '') : null,
+          };
+        });
+
+        const cost = parseFloat((firstRow[mapping.cost_price] || '0').toString().replace(',','.')) || 0;
+        const sale = parseFloat((firstRow[mapping.sale_price] || '0').toString().replace(',','.')) || 0;
+
+        const catText = mapping.category_text && firstRow[mapping.category_text] ? String(firstRow[mapping.category_text]).trim() : null;
+        const supText = mapping.supplier_text && firstRow[mapping.supplier_text] ? String(firstRow[mapping.supplier_text]).trim() : null;
+        const subText = mapping.subcategory_text && firstRow[mapping.subcategory_text] ? String(firstRow[mapping.subcategory_text]).trim() : null;
+
+        items.push({
+          fileName: name,
+          fileCostPrice: cost,
+          fileSalePrice: sale,
+          fileVariants,
+          fileTotalStock: fileVariants.reduce((sum, v) => sum + v.stock, 0),
+          existingMatch: existingEntry ? {
+            id: existingEntry.product.id,
+            name: existingEntry.product.name,
+            currentTotalStock: existingEntry.product.total_stock || 0,
+            variants: existingEntry.variants.map(v => ({
+              id: v.id,
+              size: v.size || 'Único',
+              color: v.color || 'Padrão',
+              stock: v.stock || 0,
+              sku: v.sku || null,
+            })),
+          } : null,
+          action: 'add', // Default: acrescentar (mais seguro)
+          categoryId: catText ? (categoryMap[catText] || null) : null,
+          supplierId: supText ? (supplierMap[supText] || null) : null,
+          subcategoryId: subText ? (subcategoryMap[subText] || null) : null,
+          description: mapping.description ? firstRow[mapping.description] : null,
+          imageUrl: mapping.image_url ? firstRow[mapping.image_url] : null,
+          imageUrl2: mapping.image_url_2 ? firstRow[mapping.image_url_2] : null,
+          imageUrl3: mapping.image_url_3 ? firstRow[mapping.image_url_3] : null,
+        });
+      }
+
+      setReviewItems(items);
+      setStep(3);
+    } catch (e: any) {
+      toast.error('Erro na análise: ' + e.message);
+    } finally {
+      setLoading(false);
+      setStatus('');
+    }
+  };
+
+  // Step 3 → Execute final import with differentiated actions
+  const executeImport = async () => {
+    setLoading(true);
+    setStatus('Iniciando importação...');
+
+    try {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) throw new Error('Não autenticado');
+
+      const newItems = reviewItems.filter(i => !i.existingMatch);
+      const existingItems = reviewItems.filter(i => !!i.existingMatch);
+
+      // 1. INSERT new products
+      if (newItems.length > 0) {
+        setStatus(`Criando ${newItems.length} produtos novos...`);
+        const productsToInsert: any[] = [];
+        const productNameToId: Record<string, string> = {};
+
+        for (const item of newItems) {
+          const id = crypto.randomUUID();
+          productNameToId[item.fileName] = id;
+          productsToInsert.push({
+            id,
             owner_id: user.id,
-            name: name,
-            cost_price: cost,
-            sale_price: sale,
-            description: mapping.description ? firstRow[mapping.description] : null,
-            image_url: mapping.image_url ? firstRow[mapping.image_url] : null,
-            image_url_2: mapping.image_url_2 ? firstRow[mapping.image_url_2] : null,
-            image_url_3: mapping.image_url_3 ? firstRow[mapping.image_url_3] : null,
-            category_id: mapping.category_text && firstRow[mapping.category_text] ? categoryMap[firstRow[mapping.category_text]] : null,
-            subcategory_id: mapping.subcategory_text && firstRow[mapping.subcategory_text] ? subcategoryMap[firstRow[mapping.subcategory_text]] : null,
-            supplier_id: mapping.supplier_text && firstRow[mapping.supplier_text] ? supplierMap[firstRow[mapping.supplier_text]] : null,
-            marketing_status: 'active'
-         });
-      }
+            name: item.fileName,
+            cost_price: item.fileCostPrice,
+            sale_price: item.fileSalePrice,
+            description: item.description,
+            image_url: item.imageUrl,
+            image_url_2: item.imageUrl2,
+            image_url_3: item.imageUrl3,
+            category_id: item.categoryId,
+            subcategory_id: item.subcategoryId,
+            supplier_id: item.supplierId,
+            marketing_status: 'active',
+          });
+        }
 
-      for(let i=0; i<productsToInsert.length; i+=1000) {
-         setStatus(`Enviando Lote de Produtos Base (${i}/${productsToInsert.length})...`);
-         await supabase.from('products').insert(productsToInsert.slice(i, i+1000));
-         await new Promise(r => setTimeout(r, 50));
-      }
+        for (let i = 0; i < productsToInsert.length; i += 1000) {
+          setStatus(`Enviando Lote de Produtos (${i}/${productsToInsert.length})...`);
+          await supabase.from('products').insert(productsToInsert.slice(i, i + 1000));
+          await new Promise(r => setTimeout(r, 50));
+        }
 
-      const variantsToInsert: any[] = [];
-      setStatus('Montando Malha de Variações e Estoque...');
-      for (const [name, rows] of Object.entries(productsGrouped)) {
-         const pId = productNameToIds[name];
-         rows.forEach(row => {
-            const stockStr = mapping.variant_stock ? String(row[mapping.variant_stock]).trim() : '0';
-            const stockCount = parseInt(stockStr.replace(/\D/g, '')) || 0;
-            
+        // Insert variants for new products
+        const variantsToInsert: any[] = [];
+        for (const item of newItems) {
+          const pId = productNameToId[item.fileName];
+          for (const v of item.fileVariants) {
             variantsToInsert.push({
-               id: crypto.randomUUID(),
-               product_id: pId,
-               owner_id: user.id,
-               size: mapping.variant_size ? String(row[mapping.variant_size] || 'Único') : 'Único',
-               color: mapping.variant_color ? String(row[mapping.variant_color] || 'Padrão') : 'Padrão',
-               sku: mapping.variant_sku ? String(row[mapping.variant_sku] || '') : null,
-               stock: stockCount
+              id: crypto.randomUUID(),
+              product_id: pId,
+              owner_id: user.id,
+              size: v.size,
+              color: v.color,
+              sku: v.sku || null,
+              stock: v.stock,
             });
-         });
+          }
+        }
+
+        for (let i = 0; i < variantsToInsert.length; i += 1000) {
+          setStatus(`Registrando Estoque Novos (${i}/${variantsToInsert.length})...`);
+          await supabase.from('product_variants').insert(variantsToInsert.slice(i, i + 1000));
+          await new Promise(r => setTimeout(r, 50));
+        }
       }
 
-      for(let i=0; i<variantsToInsert.length; i+=1000) {
-         setStatus(`Descarregando Estoque (${i}/${variantsToInsert.length})...`);
-         await supabase.from('product_variants').insert(variantsToInsert.slice(i, i+1000));
-         await new Promise(r => setTimeout(r, 50));
+      // 2. Process existing products
+      if (existingItems.length > 0) {
+        setStatus(`Atualizando ${existingItems.length} produtos existentes...`);
+        
+        for (let idx = 0; idx < existingItems.length; idx++) {
+          const item = existingItems[idx];
+          const existing = item.existingMatch!;
+          setStatus(`Atualizando (${idx + 1}/${existingItems.length}): ${item.fileName.substring(0, 30)}...`);
+
+          for (const fv of item.fileVariants) {
+            // Find matching existing variant by size+color
+            const normalizedSize = normalizeForComparison(fv.size);
+            const normalizedColor = normalizeForComparison(fv.color);
+            
+            const matchingVariant = existing.variants.find(ev =>
+              normalizeForComparison(ev.size) === normalizedSize &&
+              normalizeForComparison(ev.color) === normalizedColor
+            );
+
+            if (matchingVariant) {
+              // Update existing variant
+              const newStock = item.action === 'replace' ? fv.stock : matchingVariant.stock + fv.stock;
+              await supabase
+                .from('product_variants')
+                .update({ stock: newStock })
+                .eq('id', matchingVariant.id);
+            } else {
+              // Insert new variant for existing product
+              await supabase.from('product_variants').insert({
+                id: crypto.randomUUID(),
+                product_id: existing.id,
+                owner_id: user.id,
+                size: fv.size,
+                color: fv.color,
+                sku: fv.sku || null,
+                stock: fv.stock,
+              });
+            }
+          }
+        }
       }
 
-      toast.success(`${productsToInsert.length} Produtos processados a partir da planilha!`);
+      const totalProcessed = reviewItems.length;
+      toast.success(`${totalProcessed} produtos processados! (${newItems.length} novos, ${existingItems.length} atualizados)`);
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setOpen(false);
 
     } catch (e: any) {
-      toast.error('O erro final ocorreu: ' + e.message);
+      toast.error('Erro na importação: ' + e.message);
     } finally {
       setLoading(false);
       setStatus('');
@@ -234,11 +389,15 @@ export default function StockImportDialog() {
           <FileSpreadsheet className="mr-2 h-4 w-4" /> Importar Planilha (XLS/CSV)
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className={step === 3 ? "sm:max-w-[600px]" : "sm:max-w-[480px]"}>
         <DialogHeader>
-          <DialogTitle>{step === 1 ? 'Sistema Inteligente de Planilhas' : 'Mapeamento de Colunas'}</DialogTitle>
+          <DialogTitle>
+            {step === 1 ? 'Sistema Inteligente de Planilhas' : step === 2 ? 'Mapeamento de Colunas' : 'Revisão de Importação'}
+          </DialogTitle>
           <DialogDescription>
-            {step === 1 ? 'Envie as suas faturas (Excel .xls, .xlsx ou CSV). Nosso motor identificará os dados para que você defina como cadastrá-los.' : `Detectamos ${parsedData.length} registros. Diga onde o sistema deve catalogar cada dado:`}
+            {step === 1 ? 'Envie as suas faturas (Excel .xls, .xlsx ou CSV). Nosso motor identificará os dados para que você defina como cadastrá-los.' 
+            : step === 2 ? `Detectamos ${parsedData.length} registros. Diga onde o sistema deve catalogar cada dado:` 
+            : 'Verifique os produtos abaixo e escolha como tratar os já cadastrados.'}
           </DialogDescription>
         </DialogHeader>
         
@@ -292,11 +451,22 @@ export default function StockImportDialog() {
 
              <div className="pt-4 mt-6 border-t sticky bottom-0 bg-background/95 backdrop-blur-md z-10 flex gap-2 pb-1">
                 <Button variant="outline" className="flex-1 border-slate-300" onClick={() => setStep(1)} disabled={loading}>Cancelar</Button>
-                <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20" disabled={loading} onClick={executeImport}>
-                   {loading ? <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> {status || 'Processando'}</> : 'Importar Base'}
+                <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20" disabled={loading} onClick={analyzeAndReview}>
+                   {loading ? <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> {status || 'Analisando'}</> : 'Analisar e Revisar'}
                 </Button>
              </div>
           </div>
+        )}
+
+        {step === 3 && (
+          <ImportReviewStep
+            items={reviewItems}
+            onItemsChange={setReviewItems}
+            onConfirm={executeImport}
+            onBack={() => setStep(2)}
+            loading={loading}
+            status={status}
+          />
         )}
       </DialogContent>
     </Dialog>
