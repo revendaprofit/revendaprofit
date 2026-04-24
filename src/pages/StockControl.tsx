@@ -348,7 +348,7 @@ export default function StockControl() {
               <TableHead className="min-w-[120px]">Fornecedor</TableHead>
               <TableHead className="min-w-[100px]">Preço</TableHead>
               <TableHead className="min-w-[100px] text-center">Estoque</TableHead>
-              <TableHead className="min-w-[120px] text-right sticky right-0 bg-muted/50 z-10 shadow-[-2px_0_4px_rgba(0,0,0,0.02)] pr-4">Ações</TableHead>
+              <TableHead className="min-w-[120px] text-right pr-4">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -383,7 +383,7 @@ export default function StockControl() {
                         {p.total_stock > 0 ? `${p.total_stock} un` : 'Esgotado'}
                       </span>
                     </TableCell>
-                    <TableCell className={`text-right sticky right-0 z-10 shadow-[-2px_0_4px_rgba(0,0,0,0.02)] pr-4 ${selectedIds.includes(p.id) ? 'bg-muted/80' : 'bg-background'}`}>
+                    <TableCell className="text-right pr-4">
                       {!isP2p ? (
                         <div className="flex gap-2 justify-end">
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(p)} className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10">
