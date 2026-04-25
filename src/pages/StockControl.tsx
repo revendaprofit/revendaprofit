@@ -340,15 +340,15 @@ export default function StockControl() {
       <div className="rounded-md border bg-card overflow-x-auto">
         <Table>
           <TableHeader className="bg-muted/50">
-            <TableRow>
-              <TableHead className="w-[50px]"><input type="checkbox" onChange={e => setSelectedIds(e.target.checked ? filtered.map((f: any) => f.id) : [])} checked={filtered.length > 0 && selectedIds.length === filtered.length} className="w-4 h-4" /></TableHead>
-              <TableHead className="min-w-[80px]">Imagem</TableHead>
-              <TableHead className="min-w-[200px]">Produto</TableHead>
-              <TableHead className="min-w-[120px]">Categoria</TableHead>
-              <TableHead className="min-w-[120px]">Fornecedor</TableHead>
-              <TableHead className="min-w-[100px]">Preço</TableHead>
-              <TableHead className="min-w-[100px] text-center">Estoque</TableHead>
-              <TableHead className="min-w-[120px] text-right pr-4">Ações</TableHead>
+            <TableRow className="text-xs">
+              <TableHead className="w-[30px] px-2"><input type="checkbox" onChange={e => setSelectedIds(e.target.checked ? filtered.map((f: any) => f.id) : [])} checked={filtered.length > 0 && selectedIds.length === filtered.length} className="w-4 h-4" /></TableHead>
+              <TableHead className="w-[50px] px-2">Img</TableHead>
+              <TableHead className="px-2">Produto</TableHead>
+              <TableHead className="px-2">Categoria</TableHead>
+              <TableHead className="px-2">Fornecedor</TableHead>
+              <TableHead className="px-2">Preço</TableHead>
+              <TableHead className="px-2 text-center">Estoque</TableHead>
+              <TableHead className="px-2 text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -365,39 +365,39 @@ export default function StockControl() {
 
                   return (
                   <TableRow key={p.id} className={selectedIds.includes(p.id) ? "bg-muted/50" : ""}>
-                    <TableCell>
+                    <TableCell className="px-2 py-2">
                       {!isP2p && <input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => toggleSelect(p.id)} className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" />}
                     </TableCell>
-                    <TableCell>
-                      {p.image_url ? <img src={p.image_url} alt={p.name} className="w-10 h-10 object-cover rounded shadow border" /> : <div className="w-10 h-10 bg-muted/30 rounded flex items-center justify-center border text-xs text-muted-foreground">-</div>}
+                    <TableCell className="px-2 py-2">
+                      {p.image_url ? <img src={p.image_url} alt={p.name} className="w-10 h-10 object-cover rounded shadow border min-w-[40px]" /> : <div className="w-10 h-10 bg-muted/30 rounded flex items-center justify-center border text-xs text-muted-foreground min-w-[40px]">-</div>}
                     </TableCell>
-                    <TableCell className="font-medium whitespace-nowrap">
+                    <TableCell className="font-medium px-2 py-2 text-xs sm:text-sm leading-tight max-w-[150px] sm:max-w-none break-words">
                        {p.name}
-                       {isP2p && <span className="ml-2 bg-emerald-100 text-emerald-800 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full">{p2pPartnerEmail}</span>}
+                       {isP2p && <span className="ml-1 bg-emerald-100 text-emerald-800 text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-full inline-block mt-1">{p2pPartnerEmail}</span>}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{(p as any).categories?.name || '---'}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{(p as any).suppliers?.name || '---'}</TableCell>
-                    <TableCell className="font-semibold whitespace-nowrap">R$ {Number(isP2p ? p._p2p_price : p.sale_price).toFixed(2)}</TableCell>
-                    <TableCell className="text-center font-medium">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${p.total_stock > 0 ? (isP2p ? 'bg-fuchsia-100 text-fuchsia-800' : 'bg-emerald-100 text-emerald-800') : 'bg-red-100 text-red-800'}`}>
+                    <TableCell className="text-muted-foreground text-xs px-2 py-2">{(p as any).categories?.name || '---'}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs px-2 py-2">{(p as any).suppliers?.name || '---'}</TableCell>
+                    <TableCell className="font-semibold whitespace-nowrap px-2 py-2 text-xs sm:text-sm">R$ {Number(isP2p ? p._p2p_price : p.sale_price).toFixed(2)}</TableCell>
+                    <TableCell className="text-center font-medium px-2 py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold whitespace-nowrap ${p.total_stock > 0 ? (isP2p ? 'bg-fuchsia-100 text-fuchsia-800' : 'bg-emerald-100 text-emerald-800') : 'bg-red-100 text-red-800'}`}>
                         {p.total_stock > 0 ? `${p.total_stock} un` : 'Esgotado'}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right pr-4">
+                    <TableCell className="text-right px-2 py-2">
                       {!isP2p ? (
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="ghost" size="icon" onClick={() => handleEdit(p)} className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10">
-                            <Edit2 className="h-4 w-4" />
+                        <div className="flex gap-1 justify-end">
+                          <Button variant="ghost" size="icon" onClick={() => handleEdit(p)} className="h-7 w-7 text-primary hover:text-primary hover:bg-primary/10">
+                            <Edit2 className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => {
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => {
                             setSelectedIds([p.id]);
                             setShowDeleteConfirm(true);
                           }}>
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-400 italic">Vinc. Parceria</span>
+                        <span className="text-[10px] text-slate-400 italic">Parceria</span>
                       )}
                     </TableCell>
                   </TableRow>
