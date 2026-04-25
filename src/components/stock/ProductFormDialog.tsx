@@ -72,16 +72,30 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
      try {
        // --- Multiplexer Tracker de Proxy CORS ---
        let htmlContent = "";
+       let formattedUrl = importUrl.trim();
+       if (!/^https?:\/\//i.test(formattedUrl)) {
+           formattedUrl = 'https://' + formattedUrl;
+       }
+
        try {
-           const res1 = await fetch(`https://corsproxy.io/?${encodeURIComponent(importUrl)}`);
+           const res1 = await fetch(`https://corsproxy.io/?${encodeURIComponent(formattedUrl)}`);
            if (!res1.ok) throw new Error("CorsProxy.io falhou");
            htmlContent = await res1.text();
+           if (!htmlContent || htmlContent.trim() === '') throw new Error("CorsProxy.io vazio");
        } catch (err1) {
            console.warn("Primeiro proxy falhou, tentando fallback...", err1);
-           const res2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(importUrl)}`);
-           if (!res2.ok) throw new Error("AllOrigins falhou");
-           const data2 = await res2.json();
-           htmlContent = data2.contents;
+           try {
+               const res2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(formattedUrl)}`);
+               if (!res2.ok) throw new Error("AllOrigins falhou");
+               const data2 = await res2.json();
+               htmlContent = data2.contents;
+               if (!htmlContent || htmlContent.trim() === '') throw new Error("AllOrigins vazio");
+           } catch (err2) {
+               console.warn("Segundo proxy falhou, tentando fallback 2...", err2);
+               const res3 = await fetch(`https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(formattedUrl)}`);
+               if (!res3.ok) throw new Error("CodeTabs falhou");
+               htmlContent = await res3.text();
+           }
        }
 
        if (!htmlContent) throw new Error("ConteúdoHTML vazio retornado.");
@@ -90,7 +104,7 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
        const doc = parser.parseFromString(htmlContent, "text/html");
 
        // --- Extrair slug da URL para validação cruzada ---
-       const urlSlug = importUrl.split('/').filter(Boolean).pop()?.toLowerCase() || '';
+       const urlSlug = formattedUrl.split('/').filter(Boolean).pop()?.toLowerCase() || '';
        const slugWords = urlSlug.replace(/[-_]/g, ' ').split(' ').filter(w => w.length > 2);
 
        // --- Função de relevância: verifica se o nome combina com o slug da URL ---
@@ -159,7 +173,7 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
           let src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-zoom-image') || '';
           if (src && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(src)) {
              if(!src.startsWith('http')) {
-                try { src = new URL(src, importUrl).toString(); } catch(e){}
+                try { src = new URL(src, formattedUrl).toString(); } catch(e){}
              }
              allImgs.add(src);
           }
@@ -198,7 +212,13 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
   const processExternalMedia = async (url: string, isVideo: boolean) => {
       if(!url || url.includes('supabase.co')) return url;
       try {
-         const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
+         let res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
+         if (!res.ok) {
+             res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+         }
+         if (!res.ok) {
+             res = await fetch(`https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(url)}`);
+         }
          if (!res.ok) return url;
          const blob = await res.blob();
          
