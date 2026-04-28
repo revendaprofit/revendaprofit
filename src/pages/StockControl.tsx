@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import ProductFormDialog from '@/components/stock/ProductFormDialog';
 import StockImportDialog from '@/components/stock/StockImportDialog';
 import NfeImportDialog from '@/components/stock/NfeImportDialog';
 import StockExportDialog from '@/components/stock/StockExportDialog';
+import { useImageSyncStore, QueueItem } from '@/store/useImageSyncStore';
 import {
   Dialog,
   DialogContent,
@@ -148,6 +149,38 @@ export default function StockControl() {
   const { data: subcategories = [] } = useQuery({ queryKey: ['subcategories'], queryFn: async () => (await supabase.from('subcategories').select('*')).data || [] });
 
   const filtered = products.filter((p: any) => p.name.toLowerCase().includes(search.toLowerCase()));
+
+  // Auto-sync external images in background
+  useEffect(() => {
+     if (products.length > 0 && activeTab === 'local') {
+        const imagesToDownload: QueueItem[] = [];
+        
+        for (const p of products) {
+            if (p.image_url && !p.image_url.includes('supabase.co')) {
+               imagesToDownload.push({ id: p.id, url: p.image_url, column: 'image_url' });
+            }
+            if (p.image_url_2 && !p.image_url_2.includes('supabase.co')) {
+               imagesToDownload.push({ id: p.id, url: p.image_url_2, column: 'image_url_2' });
+            }
+            if (p.image_url_3 && !p.image_url_3.includes('supabase.co')) {
+               imagesToDownload.push({ id: p.id, url: p.image_url_3, column: 'image_url_3' });
+            }
+        }
+        
+        if (imagesToDownload.length > 0) {
+           supabase.auth.getSession().then(({ data }) => {
+              const token = data?.session?.access_token;
+              if (token) {
+                 const { addToQueue, startProcessing, isProcessing } = useImageSyncStore.getState();
+                 if (!isProcessing) {
+                    addToQueue(imagesToDownload);
+                    startProcessing(token);
+                 }
+              }
+           });
+        }
+     }
+  }, [products, activeTab]);
 
   const handleEdit = (p: Product) => {
     setEditingProduct(p);
