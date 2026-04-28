@@ -5,14 +5,43 @@ import { FileText, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import ImportReviewStep, { ImportReviewItem, normalizeForComparison } from './ImportReviewStep';
+import ImportReviewStep, { ImportReviewItem, ExistingProductOption, normalizeForComparison } from './ImportReviewStep';
+
+// ── Size detection ──────────────────────────────────────────────────────────
+const KNOWN_SIZES = new Set([
+  'PP', 'P', 'M', 'G', 'GG', 'XG', 'XXG', 'EG', 'EGG', 'EGGG',
+  'XS', 'S', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL',
+  '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46', '47', '48', '50',
+  'UN', 'UNICO', 'ÚNICO', 'U',
+]);
+
+function extractSizeFromName(name: string): { productName: string; size: string | null } {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length < 2) return { productName: name, size: null };
+
+  const lastPart = parts[parts.length - 1]
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (KNOWN_SIZES.has(lastPart)) {
+    return {
+      productName: parts.slice(0, -1).join(' '),
+      size: lastPart,
+    };
+  }
+  return { productName: name, size: null };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 
 export default function NfeImportDialog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState(1); // 1 = Upload, 2 = Review
+  const [step, setStep] = useState(1);
   const [status, setStatus] = useState('');
   const [reviewItems, setReviewItems] = useState<ImportReviewItem[]>([]);
+  const [allExistingProducts, setAllExistingProducts] = useState<ExistingProductOption[]>([]);
   const queryClient = useQueryClient();
 
   React.useEffect(() => {
@@ -20,6 +49,7 @@ export default function NfeImportDialog() {
       setStep(1);
       setReviewItems([]);
       setStatus('');
+      setAllExistingProducts([]);
     }
   }, [open]);
 
@@ -34,19 +64,15 @@ export default function NfeImportDialog() {
       try {
         const xmlString = event.target?.result as string;
         const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-        
-        const prods = Array.from(xmlDoc.getElementsByTagName("prod"));
+        const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
+
+        const prods = Array.from(xmlDoc.getElementsByTagName('prod'));
         const user = (await supabase.auth.getUser()).data.user;
         if (!user) throw new Error('Não autenticado');
-
-        if (prods.length === 0) {
-          throw new Error("Nenhuma tag de produto (<prod>) encontrada. O XML é realmente uma NFe?");
-        }
+        if (prods.length === 0) throw new Error('Nenhuma tag <prod> encontrada. O XML é realmente uma NFe?');
 
         setStatus('Verificando produtos existentes...');
 
-        // Fetch existing products
         const { data: existingProducts } = await supabase
           .from('products')
           .select('id, name, total_stock, cost_price, sale_price, category_id, supplier_id, subcategory_id')
@@ -59,56 +85,94 @@ export default function NfeImportDialog() {
           .eq('owner_id', user.id);
 
         // Build lookup maps
-        const existingMap = new Map<string, { product: any; variants: any[] }>();
+        const exactMap = new Map<string, { product: any; variants: any[] }>();
         const skuMap = new Map<string, { product: any; variants: any[] }>();
+        const smartMap = new Map<string, { product: any; variants: any[] }>();
+        const allProdsForReview: ExistingProductOption[] = [];
 
         (existingProducts || []).forEach(p => {
-          const normalized = normalizeForComparison(p.name);
           const productVariants = (existingVariants || []).filter(v => v.product_id === p.id);
           const entry = { product: p, variants: productVariants };
-          existingMap.set(normalized, entry);
+
+          exactMap.set(normalizeForComparison(p.name), entry);
+
           productVariants.forEach(v => {
             if (v.sku) skuMap.set(normalizeForComparison(v.sku), entry);
           });
+
+          // Also index by name-without-size for smart matching
+          const { productName: nameWithoutSize } = extractSizeFromName(p.name);
+          if (nameWithoutSize !== p.name) {
+            smartMap.set(normalizeForComparison(nameWithoutSize), entry);
+          }
+
+          allProdsForReview.push({
+            id: p.id,
+            name: p.name,
+            variants: productVariants.map(v => ({
+              id: v.id,
+              size: v.size || 'Único',
+              color: v.color || 'Padrão',
+              stock: v.stock || 0,
+              sku: v.sku || null,
+            })),
+          });
         });
 
-        setStatus('Analisando duplicatas...');
+        setAllExistingProducts(allProdsForReview);
+        setStatus('Analisando produtos e tamanhos...');
 
-        // Group NFe products by name (they can repeat)
+        // Group NFe products by XML name
         const nfeGrouped: Record<string, { name: string; cost: number; quantity: number; sku: string }[]> = {};
-
         prods.forEach(prod => {
-          const name = prod.getElementsByTagName("xProd")[0]?.textContent || 'Produto Desconhecido';
-          const costValue = parseFloat(prod.getElementsByTagName("vUnCom")[0]?.textContent || '0');
-          const quantity = parseFloat(prod.getElementsByTagName("qCom")[0]?.textContent || '1');
-          const sku = prod.getElementsByTagName("cProd")[0]?.textContent || '';
-
+          const name = prod.getElementsByTagName('xProd')[0]?.textContent || 'Produto Desconhecido';
+          const cost = parseFloat(prod.getElementsByTagName('vUnCom')[0]?.textContent || '0');
+          const qty = parseFloat(prod.getElementsByTagName('qCom')[0]?.textContent || '1');
+          const sku = prod.getElementsByTagName('cProd')[0]?.textContent || '';
           if (!nfeGrouped[name]) nfeGrouped[name] = [];
-          nfeGrouped[name].push({ name, cost: costValue, quantity: Math.round(quantity), sku });
+          nfeGrouped[name].push({ name, cost, quantity: Math.round(qty), sku });
         });
 
-        // Build review items
         const items: ImportReviewItem[] = [];
 
         for (const [name, entries] of Object.entries(nfeGrouped)) {
-          const normalizedName = normalizeForComparison(name);
           const firstEntry = entries[0];
-
-          // Check for existing match
-          let existingEntry = existingMap.get(normalizedName);
-          if (!existingEntry && firstEntry.sku) {
-            existingEntry = skuMap.get(normalizeForComparison(firstEntry.sku));
-          }
-
           const totalQty = entries.reduce((sum, e) => sum + e.quantity, 0);
           const avgCost = entries.reduce((sum, e) => sum + e.cost, 0) / entries.length;
 
+          // Extract size from name
+          const { productName: detectedProductName, size: detectedSize } = extractSizeFromName(name);
+
+          const normalizedExact = normalizeForComparison(name);
+          const normalizedDetected = normalizeForComparison(detectedProductName);
+
+          // Determine match source
+          let existingEntry = exactMap.get(normalizedExact);
+          let matchSource: ImportReviewItem['matchSource'] = 'none';
+
+          if (existingEntry) {
+            matchSource = 'exact';
+          } else if (firstEntry.sku && skuMap.get(normalizeForComparison(firstEntry.sku))) {
+            existingEntry = skuMap.get(normalizeForComparison(firstEntry.sku));
+            matchSource = 'sku';
+          } else if (detectedSize) {
+            // Try smart match: detected name vs exact map
+            existingEntry = exactMap.get(normalizedDetected);
+            if (!existingEntry) existingEntry = smartMap.get(normalizedDetected);
+            if (existingEntry) matchSource = 'smart';
+          }
+
+          const variantSize = detectedSize || 'Único';
+
           items.push({
             fileName: name,
+            detectedProductName,
+            detectedSize,
+            matchSource,
             fileCostPrice: avgCost,
-            fileSalePrice: avgCost * 2, // Sugestão de 100% markup
+            fileSalePrice: avgCost * 2,
             fileVariants: [{
-              size: 'Único',
+              size: variantSize,
               color: 'Padrão',
               stock: totalQty,
               sku: firstEntry.sku || null,
@@ -157,29 +221,28 @@ export default function NfeImportDialog() {
       const user = (await supabase.auth.getUser()).data.user;
       if (!user) throw new Error('Não autenticado');
 
-      const newItems = reviewItems.filter(i => !i.existingMatch);
-      const existingItems = reviewItems.filter(i => !!i.existingMatch);
+      // Items to create as new: no match OR user chose 'new'
+      const newItems = reviewItems.filter(i => !i.existingMatch || i.action === 'new');
+      // Items to update existing stock
+      const existingItems = reviewItems.filter(i => !!i.existingMatch && i.action !== 'new');
 
-      // 1. INSERT new products
+      // 1. Create new products
       if (newItems.length > 0) {
         setStatus(`Criando ${newItems.length} produtos novos...`);
-        
-        for (let idx = 0; idx < newItems.length; idx++) {
-          const item = newItems[idx];
+        for (const item of newItems) {
           const productId = crypto.randomUUID();
-          
+          const productName = item.detectedProductName || item.fileName;
+
           const { error: pErr } = await supabase.from('products').insert({
             id: productId,
             owner_id: user.id,
-            name: item.fileName,
+            name: productName,
             cost_price: item.fileCostPrice,
             sale_price: item.fileSalePrice,
             marketing_status: 'active',
           });
-
           if (pErr) throw pErr;
 
-          // Insert variant
           for (const v of item.fileVariants) {
             await supabase.from('product_variants').insert({
               id: crypto.randomUUID(),
@@ -194,10 +257,9 @@ export default function NfeImportDialog() {
         }
       }
 
-      // 2. Process existing products
+      // 2. Update existing products
       if (existingItems.length > 0) {
         setStatus(`Atualizando ${existingItems.length} produtos existentes...`);
-        
         for (let idx = 0; idx < existingItems.length; idx++) {
           const item = existingItems[idx];
           const existing = item.existingMatch!;
@@ -206,7 +268,7 @@ export default function NfeImportDialog() {
           for (const fv of item.fileVariants) {
             const normalizedSize = normalizeForComparison(fv.size);
             const normalizedColor = normalizeForComparison(fv.color);
-            
+
             const matchingVariant = existing.variants.find(ev =>
               normalizeForComparison(ev.size) === normalizedSize &&
               normalizeForComparison(ev.color) === normalizedColor
@@ -214,10 +276,7 @@ export default function NfeImportDialog() {
 
             if (matchingVariant) {
               const newStock = item.action === 'replace' ? fv.stock : matchingVariant.stock + fv.stock;
-              await supabase
-                .from('product_variants')
-                .update({ stock: newStock })
-                .eq('id', matchingVariant.id);
+              await supabase.from('product_variants').update({ stock: newStock }).eq('id', matchingVariant.id);
             } else {
               await supabase.from('product_variants').insert({
                 id: crypto.randomUUID(),
@@ -233,7 +292,9 @@ export default function NfeImportDialog() {
         }
       }
 
-      toast.success(`${reviewItems.length} produtos processados da NFe! (${newItems.length} novos, ${existingItems.length} atualizados)`);
+      toast.success(
+        `${reviewItems.length} produtos processados! (${newItems.length} novos, ${existingItems.length} atualizados)`
+      );
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setOpen(false);
     } catch (err: any) {
@@ -251,24 +312,24 @@ export default function NfeImportDialog() {
           <FileText className="mr-2 h-4 w-4" /> Ler NFe (XML)
         </Button>
       </DialogTrigger>
-      <DialogContent className={step === 2 ? "sm:max-w-[600px]" : ""}>
+      <DialogContent className={step === 2 ? 'sm:max-w-[660px]' : ''}>
         <DialogHeader>
           <DialogTitle>{step === 1 ? 'Importar da Nota Fiscal (NFe)' : 'Revisão de Importação NFe'}</DialogTitle>
           <DialogDescription>
-            {step === 1 
-              ? 'Selecione o arquivo .xml da NFe enviado pelo seu fornecedor. Os produtos serão analisados antes da importação.'
-              : 'Verifique os produtos extraídos da NFe e escolha como tratar os já cadastrados.'
-            }
+            {step === 1
+              ? 'Selecione o arquivo .xml da NFe. Os produtos serão analisados e tamanhos detectados automaticamente antes da importação.'
+              : 'Confirme os vínculos sugeridos, ajuste se necessário, e importe.'}
           </DialogDescription>
         </DialogHeader>
 
         {step === 1 && (
           <div className="py-6 space-y-4">
             <div className="border-2 border-dashed border-orange-200 p-12 rounded-xl text-center bg-orange-50/50 relative w-full h-[200px] flex flex-col items-center justify-center transition hover:bg-orange-50">
-              <input type="file" accept=".xml" onChange={handleFileUpload} disabled={loading} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+              <input type="file" accept=".xml" onChange={handleFileUpload} disabled={loading}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
               <FileText className="h-10 w-10 text-orange-600 mb-3 opacity-90" />
               <h3 className="font-semibold text-sm text-orange-950">Selecione o Arquivo XML</h3>
-              <p className="text-xs text-muted-foreground mt-1 px-4">Arquivo .xml da NFe enviado pelo fornecedor. Nomes, custos e quantidades serão extraídos automaticamente.</p>
+              <p className="text-xs text-muted-foreground mt-1 px-4">Arquivo .xml da NFe do fornecedor. O sistema detecta tamanhos automaticamente.</p>
             </div>
             {loading && (
               <p className="text-sm font-medium text-orange-600 text-center animate-pulse flex items-center justify-center gap-2">
@@ -287,6 +348,7 @@ export default function NfeImportDialog() {
             onBack={() => setStep(1)}
             loading={loading}
             status={status}
+            allExistingProducts={allExistingProducts}
           />
         )}
       </DialogContent>
