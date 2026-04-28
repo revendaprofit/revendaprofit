@@ -16,6 +16,7 @@ export default function StockImportDialog() {
   const [fileKeys, setFileKeys] = useState<string[]>([]);
   const [status, setStatus] = useState('');
   const [reviewItems, setReviewItems] = useState<ImportReviewItem[]>([]);
+  const [allProducts, setAllProducts] = useState<any[]>([]);
   
   const [mapping, setMapping] = useState({
     name: '',
@@ -120,6 +121,8 @@ export default function StockImportDialog() {
         .from('product_variants')
         .select('id, product_id, size, color, stock, sku')
         .eq('owner_id', user.id);
+
+      if (existingProducts) setAllProducts(existingProducts);
 
       // Build lookup map: normalized name → product + variants
       const existingMap = new Map<string, { product: any; variants: any[] }>();
@@ -246,6 +249,9 @@ export default function StockImportDialog() {
           imageUrl: mapping.image_url ? firstRow[mapping.image_url] : null,
           imageUrl2: mapping.image_url_2 ? firstRow[mapping.image_url_2] : null,
           imageUrl3: mapping.image_url_3 ? firstRow[mapping.image_url_3] : null,
+          detectedProductName: name,
+          detectedSize: null,
+          matchSource: existingEntry ? 'exact' : 'none',
         });
       }
 
@@ -466,6 +472,7 @@ export default function StockImportDialog() {
             onBack={() => setStep(2)}
             loading={loading}
             status={status}
+            allExistingProducts={allProducts}
           />
         )}
       </DialogContent>
