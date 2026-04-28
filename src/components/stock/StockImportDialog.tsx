@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import { useImageSyncStore, QueueItem } from '@/store/useImageSyncStore';
 import ImportReviewStep, { ImportReviewItem, normalizeForComparison } from './ImportReviewStep';
 
 export default function StockImportDialog() {
@@ -373,6 +374,34 @@ export default function StockImportDialog() {
             }
           }
         }
+      }
+
+      // 3. Initiate background image download for new items with external URLs
+      const imagesToDownload: QueueItem[] = [];
+      for (const item of newItems) {
+         const pId = productNameToId[item.fileName];
+         if (pId) {
+             if (item.imageUrl && !item.imageUrl.includes('supabase.co')) {
+                imagesToDownload.push({ id: pId, url: item.imageUrl, column: 'image_url' });
+             }
+             if (item.imageUrl2 && !item.imageUrl2.includes('supabase.co')) {
+                imagesToDownload.push({ id: pId, url: item.imageUrl2, column: 'image_url_2' });
+             }
+             if (item.imageUrl3 && !item.imageUrl3.includes('supabase.co')) {
+                imagesToDownload.push({ id: pId, url: item.imageUrl3, column: 'image_url_3' });
+             }
+         }
+      }
+
+      if (imagesToDownload.length > 0) {
+         const { data: sessionData } = await supabase.auth.getSession();
+         const token = sessionData.session?.access_token;
+         
+         if (token) {
+             const { addToQueue, startProcessing } = useImageSyncStore.getState();
+             addToQueue(imagesToDownload);
+             startProcessing(token);
+         }
       }
 
       const totalProcessed = reviewItems.length;

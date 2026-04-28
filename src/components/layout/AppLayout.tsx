@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import NotificationsPopover from "@/components/notifications/NotificationsPopover";
+import ImageDownloadProgress from "@/components/stock/ImageDownloadProgress";
 
 interface SidebarItemProps {
   icon: React.ElementType;
@@ -257,6 +258,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {children}
           </div>
         </div>
+        <ImageDownloadProgress />
       </main>
     </div>
   );
