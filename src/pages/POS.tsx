@@ -297,7 +297,7 @@ export default function POS() {
       console.log("[DEBUG POS] Local:", localProducts.length, "Hub:", hubProducts.length, "P2P:", p2pProducts.length);
       console.log("[DEBUG POS] P2P items:", p2pProducts);
 
-      return consolidateProducts([...localProducts, ...hubProducts, ...p2pProducts]);
+      return consolidateProducts([...localProducts, ...hubProducts, ...p2pProducts]) as Product[];
     }
   });
 
