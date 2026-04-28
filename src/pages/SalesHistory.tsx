@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Receipt, Search, XCircle, CreditCard, Banknote, UndoIcon, Eye, Filter, CheckCircle, Store } from 'lucide-react';
+import { Receipt, Search, XCircle, CreditCard, Banknote, UndoIcon, Eye, Filter, CheckCircle, Store, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -51,7 +51,7 @@ export default function SalesHistory() {
   const navigate = useNavigate();
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<'cancel' | 'complete' | 'reopenpos' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'cancel' | 'complete' | 'reopenpos' | 'hard_delete' | null>(null);
   const [search, setSearch] = useState('');
 
   const [dateFrom, setDateFrom] = useState('');
@@ -130,6 +130,26 @@ export default function SalesHistory() {
       setIsDetailsOpen(false);
     },
     onError: (e: any) => toast.error(`Erro ao cancelar: ${e.message}`)
+  });
+
+  const hardDeleteSaleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      // Primeiro cancelar para garantir a devolução do estoque via trigger
+      const sale = sales.find(s => s.id === id);
+      if (sale && sale.status !== 'cancelled') {
+        await supabase.from('sales').update({ status: 'cancelled' }).eq('id', id);
+      }
+      // Depois apagar fisicamente
+      const { error } = await supabase.from('sales').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales-history'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+      toast.success('Venda excluída permanentemente.');
+      setIsDetailsOpen(false);
+    },
+    onError: (e: any) => toast.error(`Erro ao excluir: ${e.message}`)
   });
 
   const forceCompleteMutation = useMutation({
@@ -236,10 +256,11 @@ export default function SalesHistory() {
     return matchesSearch && matchesDateFrom && matchesDateTo && matchesOrigin && matchesPayment && matchesShipping && matchesStatus && matchesDiscount && matchesPayer;
   });
 
-  // Calcula Resumo Financeiro Dinâmico por Filtros
+  // Calcula Resumo Financeiro Dinâmico por Filtros (ignorando vendas canceladas)
   const selectedSale = sales.find(s => s.id === selectedSaleId);
-  const sumVendas = filteredSales.reduce((a, b) => a + Number(b.total_amount || 0), 0);
-  const sumCustos = filteredSales.reduce((a, s) => {
+  const validSales = filteredSales.filter(s => s.status !== 'cancelled');
+  const sumVendas = validSales.reduce((a, b) => a + Number(b.total_amount || 0), 0);
+  const sumCustos = validSales.reduce((a, s) => {
       // Para cada item da venda, verifica se tem settlement de parceria para compor o custo real
       const pOrders = s.partnership_orders || [];
       const itemsCost = s.sale_items?.reduce((acc: number, item: any) => {
@@ -273,7 +294,7 @@ export default function SalesHistory() {
 
       return a + itemsCost + repassesCost + ppCommissionCost;
   }, 0);
-  const sumLucroLiquido = sumVendas - sumCustos - filteredSales.reduce((a, s) => a + (Number(s.payment_fee_amount) || 0) + (Number(s.payment_fee_amount_2) || 0) + (s.shipping_payer === 'seller' ? (Number(s.shipping_cost) || 0) : 0), 0); const margemLucro = sumVendas > 0 ? (sumLucroLiquido / sumVendas) * 100 : 0;
+  const sumLucroLiquido = sumVendas - sumCustos - validSales.reduce((a, s) => a + (Number(s.payment_fee_amount) || 0) + (Number(s.payment_fee_amount_2) || 0) + (s.shipping_payer === 'seller' ? (Number(s.shipping_cost) || 0) : 0), 0); const margemLucro = sumVendas > 0 ? (sumLucroLiquido / sumVendas) * 100 : 0;
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -633,43 +654,52 @@ export default function SalesHistory() {
                 })()}
               </div>
 
-              {(selectedSale.status === 'completed' || selectedSale.status === 'open' || selectedSale.status === 'rejected_p2p') && (
-                <div className="pt-4 border-t flex flex-col sm:flex-row justify-end gap-3 mt-4 flex-wrap">
-                  
-                  {selectedSale.status === 'rejected_p2p' && (
+              <div className="pt-4 border-t flex flex-col sm:flex-row justify-end gap-3 mt-4 flex-wrap">
+                  {selectedSale.status !== 'cancelled' && (
                      <>
-                       <Button 
-                         variant="outline" 
-                         className="flex w-full sm:w-auto items-center justify-center gap-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50"
-                         onClick={() => setConfirmAction('complete')}
-                         disabled={forceCompleteMutation.isPending}
-                       >
-                         <CheckCircle className="h-4 w-4" /> 
-                         {forceCompleteMutation.isPending ? 'Resolvendo...' : 'Resolver: Marcar Como Entregue'}
-                       </Button>
+                        {selectedSale.status === 'rejected_p2p' && (
+                           <Button 
+                             variant="outline" 
+                             className="flex w-full sm:w-auto items-center justify-center gap-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+                             onClick={() => setConfirmAction('complete')}
+                             disabled={forceCompleteMutation.isPending}
+                           >
+                             <CheckCircle className="h-4 w-4" /> 
+                             {forceCompleteMutation.isPending ? 'Resolvendo...' : 'Resolver: Marcar Como Entregue'}
+                           </Button>
+                        )}
 
-                       <Button 
-                         variant="outline" 
-                         className="flex w-full sm:w-auto items-center justify-center gap-2 border-blue-600 text-blue-700 hover:bg-blue-50"
-                         onClick={() => setConfirmAction('reopenpos')}
-                       >
-                         <Store className="h-4 w-4" /> 
-                         Resolver: Editar no PDV
-                       </Button>
+                        <Button 
+                          variant="outline" 
+                          className="flex w-full sm:w-auto items-center justify-center gap-2 border-blue-600 text-blue-700 hover:bg-blue-50"
+                          onClick={() => setConfirmAction('reopenpos')}
+                        >
+                          <Store className="h-4 w-4" /> 
+                          {selectedSale.status === 'rejected_p2p' ? 'Resolver: Editar no PDV' : 'Reabrir e Editar no PDV'}
+                        </Button>
+
+                        <Button 
+                          variant="destructive" 
+                          className="flex w-full sm:w-auto items-center justify-center gap-2"
+                          onClick={() => setConfirmAction('cancel')}
+                          disabled={cancelSaleMutation.isPending}
+                        >
+                          <XCircle className="h-4 w-4" /> 
+                          {cancelSaleMutation.isPending ? 'Estornando...' : 'Estornar e Devolver Estoque'}
+                        </Button>
                      </>
                   )}
-
+                  
                   <Button 
-                    variant="destructive" 
-                    className="flex w-full sm:w-auto items-center justify-center gap-2"
-                    onClick={() => setConfirmAction('cancel')}
-                    disabled={cancelSaleMutation.isPending}
+                    variant="ghost" 
+                    className="flex w-full sm:w-auto items-center justify-center gap-2 text-red-600 hover:text-red-800 hover:bg-red-50"
+                    onClick={() => setConfirmAction('hard_delete')}
+                    disabled={hardDeleteSaleMutation.isPending}
                   >
-                    <XCircle className="h-4 w-4" /> 
-                    {cancelSaleMutation.isPending ? 'Estornando...' : 'Devolver Dinheiro (Estornar)'}
+                    <Trash2 className="h-4 w-4" /> 
+                    {hardDeleteSaleMutation.isPending ? 'Excluindo...' : 'Excluir Definitivamente'}
                   </Button>
-                </div>
-              )}
+              </div>
             </div>
           )}
         </DialogContent>
@@ -680,21 +710,27 @@ export default function SalesHistory() {
          <DialogContent className="sm:max-w-md">
             <DialogHeader>
                <DialogTitle className={
-                  confirmAction === 'cancel' ? "text-red-600 flex gap-2 items-center" : 
+                  confirmAction === 'cancel' || confirmAction === 'hard_delete' ? "text-red-600 flex gap-2 items-center" : 
                   (confirmAction === 'reopenpos' ? "text-blue-700 flex gap-2 items-center" : "text-emerald-700 flex gap-2 items-center")
                }>
                   {confirmAction === 'cancel' && <XCircle className="w-5 h-5"/>}
+                  {confirmAction === 'hard_delete' && <Trash2 className="w-5 h-5"/>}
                   {confirmAction === 'complete' && <CheckCircle className="w-5 h-5"/>}
                   {confirmAction === 'reopenpos' && <Store className="w-5 h-5"/>}
                   
-                  {confirmAction === 'cancel' ? 'Confirmar Cancelamento' : (confirmAction === 'reopenpos' ? 'Reabrir no Caixa (PDV)' : 'Concluir Venda Manualmente')}
+                  {confirmAction === 'cancel' ? 'Confirmar Estorno' : (confirmAction === 'reopenpos' ? 'Reabrir no Caixa (PDV)' : (confirmAction === 'hard_delete' ? 'Excluir Venda Permanentemente' : 'Concluir Venda Manualmente'))}
                </DialogTitle>
             </DialogHeader>
-            <div className={`p-4 text-sm rounded-lg border shadow-inner ${confirmAction === 'cancel' ? 'bg-red-50 text-red-900 border-red-100' : (confirmAction === 'reopenpos' ? 'bg-blue-50 text-blue-900 border-blue-100' : 'bg-emerald-50 text-emerald-900 border-emerald-100')}`}>
+            <div className={`p-4 text-sm rounded-lg border shadow-inner ${confirmAction === 'cancel' || confirmAction === 'hard_delete' ? 'bg-red-50 text-red-900 border-red-100' : (confirmAction === 'reopenpos' ? 'bg-blue-50 text-blue-900 border-blue-100' : 'bg-emerald-50 text-emerald-900 border-emerald-100')}`}>
                {confirmAction === 'cancel' ? (
                   <>
                     <p className="font-bold mb-2">Atenção: Cancelar esta venda é uma ação irreversível.</p>
-                    <p>Ao aprovar isso, as contabilizações financeiras dela serão zeradas no seu balanço. Você deverá devolver o dinheiro à sua cliente (via PIX, etc) por fora do sistema.</p>
+                    <p>O financeiro será anulado e os itens devolvidos ao estoque, mas o registro do cancelamento ficará salvo no histórico. Devolva o dinheiro do cliente por fora do sistema.</p>
+                  </>
+               ) : confirmAction === 'hard_delete' ? (
+                  <>
+                    <p className="font-bold mb-2">Perigo: A exclusão permanente não pode ser desfeita.</p>
+                    <p>O estoque será devolvido, mas o registro dessa venda e todos os seus itens desaparecerão completamente do banco de dados.</p>
                   </>
                ) : confirmAction === 'reopenpos' ? (
                   <>
@@ -715,6 +751,11 @@ export default function SalesHistory() {
                      if (selectedSaleId) cancelSaleMutation.mutate(selectedSaleId);
                      setConfirmAction(null);
                   }}>Sim, Estornar Tudo</Button>
+               ) : confirmAction === 'hard_delete' ? (
+                  <Button className="flex-1 bg-red-600 hover:bg-red-700 font-bold" onClick={() => {
+                     if (selectedSaleId) hardDeleteSaleMutation.mutate(selectedSaleId);
+                     setConfirmAction(null);
+                  }}>Apagar do Banco</Button>
                ) : confirmAction === 'reopenpos' ? (
                   <Button className="flex-1 bg-blue-600 hover:bg-blue-700 font-bold" onClick={() => {
                      setConfirmAction(null);
