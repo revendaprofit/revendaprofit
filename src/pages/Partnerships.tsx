@@ -2,7 +2,7 @@ import React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { Handshake, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Handshake, AlertCircle, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import PartnershipWizardDialog from '@/components/partnerships/PartnershipWizardDialog';
 import PartnershipCatalogSheet from '@/components/partnerships/PartnershipCatalogSheet';
 import PartnershipSettlementsSheet from '@/components/partnerships/PartnershipSettlementsSheet';
@@ -19,6 +19,18 @@ export default function Partnerships() {
       const { error } = await supabase.from('partnerships').update({ status: newStatus }).eq('id', id);
       if (error) throw error;
       toast.success(`Parceria ${newStatus === 'active' ? 'aceita' : 'recusada'} com sucesso!`);
+      queryClient.invalidateQueries({ queryKey: ['partnerships'] });
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta parceria definitivamente? Os registros de vendas P2P associados podem perder a referência.')) return;
+    try {
+      const { error } = await supabase.from('partnerships').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Parceria excluída com sucesso!');
       queryClient.invalidateQueries({ queryKey: ['partnerships'] });
     } catch (error: any) {
       toast.error(error.message);
@@ -118,6 +130,9 @@ export default function Partnerships() {
                              <PartnershipCatalogSheet partnershipId={p.id} partnerEmail={otherEmail || ''} />
                           </div>
                         )}
+                        <Button size="sm" variant="ghost" className="text-muted-foreground hover:bg-red-50 hover:text-red-600 ml-2" onClick={() => handleDelete(p.id)} title="Excluir Parceria">
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
                   </div>
