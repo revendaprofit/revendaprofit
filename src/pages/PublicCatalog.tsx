@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { consolidateProducts } from '@/utils/productConsolidator';
 
 function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: any) {
   const inStockVariants = p.product_variants?.filter((v: any) => v.stock > 0) || [];
@@ -72,6 +73,14 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
            </div>
         )}
 
+        {p._is_p2p && !isList && (
+           <div className="absolute top-2 left-2 z-20">
+              <div className="bg-blue-600/90 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm uppercase tracking-wider">
+                 <LinkIcon className="h-3 w-3" /> Parceria
+              </div>
+           </div>
+        )}
+
         {inStockVariants.length === 0 && (
           <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center z-20">
             <span className="bg-gray-800 text-white text-[10px] sm:text-xs font-bold px-2 py-1 rounded-full uppercase tracking-wider">Esgotado</span>
@@ -112,6 +121,7 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
                         className="text-xs font-medium px-2.5 py-1.5 rounded-md border flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors z-30 relative"
                         title={`Estoque: ${v.stock}`}
                       >
+                        {v._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
                         {v.size}
                         {qtyInCart > 0 && <span className="ml-1.5 bg-primary text-white text-[10px] h-4 w-4 rounded-full flex items-center justify-center">{qtyInCart}</span>}
                       </button>
@@ -360,7 +370,9 @@ export default function PublicCatalog() {
   });
 
   // Mescla produtos locais + hub importados + parcerias
-  const products = [...localProducts, ...hubImportedProducts, ...partnershipProducts];
+  const products = useMemo(() => {
+    return consolidateProducts([...localProducts, ...hubImportedProducts, ...partnershipProducts]);
+  }, [localProducts, hubImportedProducts, partnershipProducts]);
 
   useEffect(() => {
     if (store?.page_title) {
@@ -501,7 +513,12 @@ export default function PublicCatalog() {
         if (existing.qty >= variant.stock) return prev;
         return prev.map(c => c.variant_id === variant.id ? { ...c, qty: c.qty + 1 } : c);
       }
-      return [...prev, { variant_id: variant.id, product, variant, qty: 1 }];
+      return [...prev, { 
+        variant_id: variant.id, 
+        product: { ...product, id: variant._parent_id ?? product.id, _is_p2p: variant._is_p2p ?? product._is_p2p }, 
+        variant, 
+        qty: 1 
+      }];
     });
   };
 

@@ -3,8 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ShoppingCart, CheckCircle, Search, Trash2, ArrowRight, UserPlus, Gift, MapPin, CreditCard, DollarSign, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, CheckCircle, Search, Trash2, ArrowRight, UserPlus, Gift, MapPin, CreditCard, DollarSign, AlertTriangle, Link as LinkIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { consolidateProducts } from '@/utils/productConsolidator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 type Customer = { id: string; name: string; phone?: string };
@@ -296,7 +297,7 @@ export default function POS() {
       console.log("[DEBUG POS] Local:", localProducts.length, "Hub:", hubProducts.length, "P2P:", p2pProducts.length);
       console.log("[DEBUG POS] P2P items:", p2pProducts);
 
-      return [...localProducts, ...hubProducts, ...p2pProducts];
+      return consolidateProducts([...localProducts, ...hubProducts, ...p2pProducts]);
     }
   });
 
@@ -660,19 +661,19 @@ export default function POS() {
     } else {
        setCart([...cart, {
            variant_id: variant.id,
-           product_id: product.id,
+           product_id: (variant as any)._parent_id ?? product.id,
            name: product.name,
            variant_desc: `${variant.size} ${variant.color}`,
            price: product.sale_price,
            cost_price: product.cost_price || 0,
            quantity: 1,
            max_stock: variant.stock,
-           _is_hub: product._is_hub,
-           _hub_product_id: product._hub_product_id,
-           _supplier_id: product._supplier_id,
-           _is_p2p: product._is_p2p,
-           _p2p_partnership_id: product._p2p_partnership_id,
-           _p2p_owner_id: product._p2p_owner_id
+           _is_hub: (variant as any)._is_hub ?? product._is_hub,
+           _hub_product_id: (variant as any)._hub_product_id ?? product._hub_product_id,
+           _supplier_id: (variant as any)._supplier_id ?? product._supplier_id,
+           _is_p2p: (variant as any)._is_p2p ?? product._is_p2p,
+           _p2p_partnership_id: (variant as any)._p2p_partnership_id ?? product._p2p_partnership_id,
+           _p2p_owner_id: (variant as any)._p2p_owner_id ?? product._p2p_owner_id
        }]);
     }
   };
@@ -756,6 +757,7 @@ export default function POS() {
                               <div className="flex flex-wrap gap-2">
                                  {av.length > 0 ? av.map(v => (
                                    <Button key={v.id} variant="outline" size="sm" className="h-7 text-xs border-primary/30 hover:border-primary hover:bg-primary/5 px-2" onClick={() => {addToCart(p,v); setSearch('');}}>
+                                      {(v as any)._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
                                       {v.size} {v.color && `- ${v.color}`}
                                    </Button>
                                  )) : <span className="text-[10px] text-red-500 border border-red-100 bg-red-50 px-2 py-1 rounded">Sem estoque</span>}
