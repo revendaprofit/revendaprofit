@@ -363,34 +363,37 @@ export default function StockImportDialog() {
              await supabase.from('products').update(updatePayload).eq('id', existing.id);
           }
 
-          for (const fv of item.fileVariants) {
-            // Find matching existing variant by size+color
-            const normalizedSize = normalizeForComparison(fv.size);
-            const normalizedColor = normalizeForComparison(fv.color);
-            
-            const matchingVariant = existing.variants.find(ev =>
-              normalizeForComparison(ev.size) === normalizedSize &&
-              normalizeForComparison(ev.color) === normalizedColor
-            );
+          // Update variants only if action is not ignore_stock
+          if (item.action !== 'ignore_stock') {
+            for (const fv of item.fileVariants) {
+              // Find matching existing variant by size+color
+              const normalizedSize = normalizeForComparison(fv.size);
+              const normalizedColor = normalizeForComparison(fv.color);
+              
+              const matchingVariant = existing.variants.find(ev =>
+                normalizeForComparison(ev.size) === normalizedSize &&
+                normalizeForComparison(ev.color) === normalizedColor
+              );
 
-            if (matchingVariant) {
-              // Update existing variant
-              const newStock = item.action === 'replace' ? fv.stock : matchingVariant.stock + fv.stock;
-              await supabase
-                .from('product_variants')
-                .update({ stock: newStock })
-                .eq('id', matchingVariant.id);
-            } else {
-              // Insert new variant for existing product
-              await supabase.from('product_variants').insert({
-                id: crypto.randomUUID(),
-                product_id: existing.id,
-                owner_id: user.id,
-                size: fv.size,
-                color: fv.color,
-                sku: fv.sku || null,
-                stock: fv.stock,
-              });
+              if (matchingVariant) {
+                // Update existing variant
+                const newStock = item.action === 'replace' ? fv.stock : matchingVariant.stock + fv.stock;
+                await supabase
+                  .from('product_variants')
+                  .update({ stock: newStock })
+                  .eq('id', matchingVariant.id);
+              } else {
+                // Insert new variant for existing product
+                await supabase.from('product_variants').insert({
+                  id: crypto.randomUUID(),
+                  product_id: existing.id,
+                  owner_id: user.id,
+                  size: fv.size,
+                  color: fv.color,
+                  sku: fv.sku || null,
+                  stock: fv.stock,
+                });
+              }
             }
           }
         }

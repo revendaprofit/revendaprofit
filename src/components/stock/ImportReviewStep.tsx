@@ -32,7 +32,7 @@ export type ImportReviewItem = {
   fileVariants: ImportVariant[];
   fileTotalStock: number;
   existingMatch: ExistingMatch | null;
-  action: 'replace' | 'add' | 'new'; // 'new' = reject match, treat as new product
+  action: 'replace' | 'add' | 'new' | 'ignore_stock'; // 'new' = reject match, treat as new product
   categoryId: string | null;
   supplierId: string | null;
   subcategoryId: string | null;
@@ -128,7 +128,7 @@ export default function ImportReviewStep({ items, onItemsChange, onConfirm, onBa
               const isOpen = openSelectorIdx === globalIdx;
               const rejected = item.action === 'new';
               const currentStock = item.existingMatch?.currentTotalStock ?? 0;
-              const resultStock = item.action === 'replace' ? item.fileTotalStock : currentStock + item.fileTotalStock;
+              const resultStock = item.action === 'replace' ? item.fileTotalStock : item.action === 'ignore_stock' ? currentStock : currentStock + item.fileTotalStock;
 
               return (
                 <div key={idx} className={`p-3 space-y-2 ${rejected ? 'opacity-60 bg-slate-50' : ''}`}>
@@ -180,6 +180,7 @@ export default function ImportReviewStep({ items, onItemsChange, onConfirm, onBa
                         >
                           <option value="add">➕ Acrescentar</option>
                           <option value="replace">🔄 Substituir</option>
+                          <option value="ignore_stock">⏭️ Só Dados/Fotos (Ignorar Estoque)</option>
                         </select>
                       )}
                       <button
@@ -243,6 +244,8 @@ export default function ImportReviewStep({ items, onItemsChange, onConfirm, onBa
                 className="text-[10px] px-2 py-1 rounded-md font-semibold border transition bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100">➕ Todos: Acrescentar</button>
               <button onClick={() => onItemsChange(items.map(i => (i.matchSource === 'exact' || i.matchSource === 'sku') ? { ...i, action: 'replace' } : i))}
                 className="text-[10px] px-2 py-1 rounded-md font-semibold border transition bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100">🔄 Todos: Substituir</button>
+              <button onClick={() => onItemsChange(items.map(i => (i.matchSource === 'exact' || i.matchSource === 'sku') ? { ...i, action: 'ignore_stock' } : i))}
+                className="text-[10px] px-2 py-1 rounded-md font-semibold border transition bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100">⏭️ Todos: Só Dados</button>
             </div>
           </div>
           <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
@@ -259,18 +262,19 @@ export default function ImportReviewStep({ items, onItemsChange, onConfirm, onBa
               <tbody>
                 {exactItems.map((item, idx) => {
                   const current = item.existingMatch!.currentTotalStock;
-                  const result = item.action === 'replace' ? item.fileTotalStock : current + item.fileTotalStock;
+                  const result = item.action === 'replace' ? item.fileTotalStock : item.action === 'ignore_stock' ? current : current + item.fileTotalStock;
                   return (
                     <tr key={idx} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition">
                       <td className="px-3 py-2.5 font-medium text-slate-800 max-w-[140px] truncate" title={item.fileName}>{item.fileName}</td>
                       <td className="text-center px-2 py-2.5"><span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold text-[11px]">{current}</span></td>
                       <td className="text-center px-2 py-2.5"><span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold text-[11px]">{item.fileTotalStock}</span></td>
-                      <td className="text-center px-2 py-2.5"><span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${item.action === 'replace' ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}`}>{item.action === 'replace' ? '→' : '+'} {result}</span></td>
+                      <td className="text-center px-2 py-2.5"><span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${item.action === 'replace' ? 'bg-orange-100 text-orange-700' : item.action === 'ignore_stock' ? 'bg-slate-100 text-slate-700' : 'bg-emerald-100 text-emerald-700'}`}>{item.action === 'replace' ? '→' : item.action === 'ignore_stock' ? '=' : '+'} {result}</span></td>
                       <td className="text-right px-3 py-2.5">
                         <select value={item.action} onChange={e => updateItem(item, { action: e.target.value as 'replace' | 'add' })}
                           className="text-[11px] rounded-md border border-slate-200 bg-white px-1.5 py-1 font-medium focus:ring-1 focus:ring-indigo-400 outline-none shadow-sm cursor-pointer">
                           <option value="add">➕ Acrescentar</option>
                           <option value="replace">🔄 Substituir</option>
+                          <option value="ignore_stock">⏭️ Só Dados/Fotos (Ignorar Estoque)</option>
                         </select>
                       </td>
                     </tr>
