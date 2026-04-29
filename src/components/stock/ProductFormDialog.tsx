@@ -351,11 +351,13 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
       const user = (await supabase.auth.getUser()).data.user;
       if (!user) throw new Error('Unauthenticated');
       
-      // Map external urls to internal compressed blobs
-      const finalImage1 = formData.image_urls[0] ? await processExternalMedia(formData.image_urls[0], false) : null;
-      const finalImage2 = formData.image_urls[1] ? await processExternalMedia(formData.image_urls[1], false) : null;
-      const finalImage3 = formData.image_urls[2] ? await processExternalMedia(formData.image_urls[2], false) : null;
-      const finalVideo = formData.video_url ? await processExternalMedia(formData.video_url, true) : null;
+      // Map external urls to internal compressed blobs IN PARALLEL to reduce save time
+      const [finalImage1, finalImage2, finalImage3, finalVideo] = await Promise.all([
+         formData.image_urls[0] ? processExternalMedia(formData.image_urls[0], false) : Promise.resolve(null),
+         formData.image_urls[1] ? processExternalMedia(formData.image_urls[1], false) : Promise.resolve(null),
+         formData.image_urls[2] ? processExternalMedia(formData.image_urls[2], false) : Promise.resolve(null),
+         formData.video_url ? processExternalMedia(formData.video_url, true) : Promise.resolve(null)
+      ]);
 
       const payload = { 
          name: formData.name, 
