@@ -278,11 +278,12 @@ export default function StockImportDialog() {
       const newItems = reviewItems.filter(i => !i.existingMatch);
       const existingItems = reviewItems.filter(i => !!i.existingMatch);
 
+      const productNameToId: Record<string, string> = {};
+
       // 1. INSERT new products
       if (newItems.length > 0) {
         setStatus(`Criando ${newItems.length} produtos novos...`);
         const productsToInsert: any[] = [];
-        const productNameToId: Record<string, string> = {};
 
         for (const item of newItems) {
           const id = crypto.randomUUID();
