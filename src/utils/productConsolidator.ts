@@ -36,21 +36,18 @@ export function consolidateProducts(products: any[]) {
        for (const v of other.product_variants || []) {
            const vNorm = `${(v.size || '').toLowerCase()}-${(v.color || '').toLowerCase()}`;
            
-           // Only add if exact variant doesn't already exist in the base
-           if (!baseVariantsNorm.has(vNorm)) {
-               base.product_variants.push({
-                   ...v,
-                   // Inject parent tracking info into the variant so addToCart knows its true origin
-                   _is_p2p: other._is_p2p,
-                   _is_hub: other._is_hub,
-                   _parent_id: other.id, 
-                   _p2p_partnership_id: other._p2p_partnership_id,
-                   _p2p_owner_id: other._p2p_owner_id,
-                   _hub_product_id: other._hub_product_id,
-                   _supplier_id: other._supplier_id,
-               });
-               baseVariantsNorm.add(vNorm);
-           }
+           // Always add variants from other sources (they will render with icons like Hub or P2P if they overlap)
+           base.product_variants.push({
+               ...v,
+               // Inject parent tracking info into the variant so addToCart knows its true origin
+               _is_p2p: other._is_p2p,
+               _is_hub: other._is_hub,
+               _parent_id: other.id, 
+               _p2p_partnership_id: other._p2p_partnership_id,
+               _p2p_owner_id: other._p2p_owner_id,
+               _hub_product_id: other._hub_product_id,
+               _supplier_id: other._supplier_id,
+           });
        }
     }
   }
