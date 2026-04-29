@@ -301,8 +301,9 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
      }
   };
 
-  const processExternalMedia = async (url: string, isVideo: boolean) => {
+  const processExternalMedia = async (url: string, isVideo: boolean, initialUrl?: string) => {
       if(!url || url.includes('supabase.co')) return url;
+      if(url === initialUrl) return url; // Ignore se a foto já estava no produto e não foi alterada, para salvar mais rápido
       try {
          // ─── Check shared image cache first ───
          if (!isVideo) {
@@ -353,10 +354,10 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
       
       // Map external urls to internal compressed blobs IN PARALLEL to reduce save time
       const [finalImage1, finalImage2, finalImage3, finalVideo] = await Promise.all([
-         formData.image_urls[0] ? processExternalMedia(formData.image_urls[0], false) : Promise.resolve(null),
-         formData.image_urls[1] ? processExternalMedia(formData.image_urls[1], false) : Promise.resolve(null),
-         formData.image_urls[2] ? processExternalMedia(formData.image_urls[2], false) : Promise.resolve(null),
-         formData.video_url ? processExternalMedia(formData.video_url, true) : Promise.resolve(null)
+         formData.image_urls[0] ? processExternalMedia(formData.image_urls[0], false, initialData?.image_url) : Promise.resolve(null),
+         formData.image_urls[1] ? processExternalMedia(formData.image_urls[1], false, initialData?.image_url_2) : Promise.resolve(null),
+         formData.image_urls[2] ? processExternalMedia(formData.image_urls[2], false, initialData?.image_url_3) : Promise.resolve(null),
+         formData.video_url ? processExternalMedia(formData.video_url, true, initialData?.video_url) : Promise.resolve(null)
       ]);
 
       const payload = { 
