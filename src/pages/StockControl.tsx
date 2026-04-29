@@ -12,6 +12,7 @@ import ProductFormDialog from '@/components/stock/ProductFormDialog';
 import StockImportDialog from '@/components/stock/StockImportDialog';
 import NfeImportDialog from '@/components/stock/NfeImportDialog';
 import StockExportDialog from '@/components/stock/StockExportDialog';
+import PhotoImportDialog from '@/components/stock/PhotoImportDialog';
 import { useImageSyncStore, QueueItem } from '@/store/useImageSyncStore';
 import {
   Dialog,
@@ -236,6 +237,7 @@ export default function StockControl() {
           <div className="col-span-1"><StockExportDialog products={filtered} /></div>
           <div className="col-span-1"><StockImportDialog /></div>
           <div className="col-span-2 sm:col-span-1"><NfeImportDialog /></div>
+          <div className="col-span-2 sm:col-span-1"><PhotoImportDialog /></div>
           <Button onClick={() => { setEditingProduct(null); setFormOpen(true); }} className="col-span-2 sm:col-span-1">
             <Plus className="mr-2 h-4 w-4" /> Novo Produto
           </Button>
