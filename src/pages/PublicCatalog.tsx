@@ -544,7 +544,17 @@ export default function PublicCatalog() {
     };
   }, [products]);
 
-  const filteredProducts = products.filter((p: any) => {
+  const dealsActive = !store?.deals_password || dealsUnlocked;
+
+  const displayProducts = useMemo(() => {
+     if (dealsActive) return products;
+     return products.map((p: any) => ({
+        ...p,
+        product_variants: p.product_variants?.map((v: any) => ({...v, sale_price: null})) || []
+     }));
+  }, [products, dealsActive]);
+
+  const filteredProducts = displayProducts.filter((p: any) => {
     // Esconder produtos totalmente esgotados
     const inStockVariants = p.product_variants?.filter((v: any) => (v.stock || 0) > 0) || [];
     if (inStockVariants.length === 0) return false;
@@ -575,8 +585,8 @@ export default function PublicCatalog() {
   });
   
   const totalCart = cart.reduce((acc, item) => {
-    // Use variant sale_price if available, otherwise product sale_price
-    const variantPrice = item.variant?.sale_price && parseFloat(item.variant.sale_price) > 0 ? parseFloat(item.variant.sale_price) : item.product.sale_price;
+    // Use variant sale_price if available and deals are active, otherwise product sale_price
+    const variantPrice = dealsActive && item.variant?.sale_price && parseFloat(item.variant.sale_price) > 0 ? parseFloat(item.variant.sale_price) : item.product.sale_price;
     return acc + (variantPrice * item.qty);
   }, 0);
   const totalItems = cart.reduce((acc, item) => acc + item.qty, 0);
@@ -697,7 +707,8 @@ export default function PublicCatalog() {
 
       let text = `*NOVO PEDIDO: ${orderCode}*\n(Via Catálogo Online)\n\nOlá, ${store.store_name}!\nGostaria de concluir a compra dos itens abaixo:\n\n`;
       cart.forEach((item, index) => {
-        const unitPrice = item.variant?.sale_price && parseFloat(item.variant.sale_price) > 0 ? parseFloat(item.variant.sale_price) : item.product.sale_price;
+        const dealsActive = !store?.deals_password || dealsUnlocked;
+        const unitPrice = dealsActive && item.variant?.sale_price && parseFloat(item.variant.sale_price) > 0 ? parseFloat(item.variant.sale_price) : item.product.sale_price;
         text += `${index + 1}. ${item.product.name} (Tamanho: ${item.variant.size || 'Un'}, Cor: ${item.variant.color || '-'}) - Qtd: ${item.qty} un - R$ ${(unitPrice * item.qty).toFixed(2)}\n`;
       });
       text += `\n*Total estimado:* R$ ${totalCart.toFixed(2)}\n\nMeu nome é *${customerName}*. Aguardo confirmação e link de pagamento!`;
