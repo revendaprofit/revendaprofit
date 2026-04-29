@@ -544,7 +544,9 @@ export default function PublicCatalog() {
     };
   }, [products]);
 
-  const dealsActive = !store?.deals_password || dealsUnlocked;
+  // Se a loja não tem senha, as oportunidades ficam sempre visíveis nos cards (comportamento original)
+  // Se a loja TEM senha, as oportunidades só ficam visíveis quando o filtro showDeals está ativado (após destrancar)
+  const dealsActive = !store?.deals_password ? true : (showDeals && dealsUnlocked);
 
   const displayProducts = useMemo(() => {
      if (dealsActive) return products;
