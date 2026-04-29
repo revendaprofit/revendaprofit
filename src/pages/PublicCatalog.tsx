@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star, Sparkles, Flame } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star, Sparkles, Flame, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -239,6 +239,12 @@ export default function PublicCatalog() {
   const [customerWhatsapp, setCustomerWhatsapp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // VIP Deals password
+  const [dealsUnlocked, setDealsUnlocked] = useState(false);
+  const [dealsPasswordInput, setDealsPasswordInput] = useState('');
+  const [dealsPasswordModalOpen, setDealsPasswordModalOpen] = useState(false);
+  const [dealsPasswordError, setDealsPasswordError] = useState(false);
+
   // Carrega as configurações da loja baseadas no slug (URL)
   const { data: store, isLoading: storeLoading } = useQuery({
     queryKey: ['public-store', slug],
@@ -249,6 +255,50 @@ export default function PublicCatalog() {
       return data;
     }
   });
+
+  // Check if deals were previously unlocked in this session
+  useEffect(() => {
+    if (store?.deals_password) {
+      const savedPass = localStorage.getItem(`rp_deals_${slug}`);
+      if (savedPass === store.deals_password) {
+        setDealsUnlocked(true);
+      }
+    } else {
+      // No password set = always unlocked
+      setDealsUnlocked(true);
+    }
+  }, [store, slug]);
+
+  const handleDealsClick = () => {
+    if (showDeals) {
+      // Toggle off
+      setShowDeals(false);
+      return;
+    }
+    // If no password or already unlocked -> show deals
+    if (!store?.deals_password || dealsUnlocked) {
+      setShowDeals(true); setShowBazar(false); setSelectedCategory(null); setSelectedSubcategory(null);
+    } else {
+      // Show password modal
+      setDealsPasswordInput('');
+      setDealsPasswordError(false);
+      setDealsPasswordModalOpen(true);
+    }
+  };
+
+  const handleDealsPasswordSubmit = () => {
+    if (dealsPasswordInput.trim() === store?.deals_password) {
+      setDealsUnlocked(true);
+      setShowDeals(true);
+      setShowBazar(false);
+      setSelectedCategory(null);
+      setSelectedSubcategory(null);
+      setDealsPasswordModalOpen(false);
+      localStorage.setItem(`rp_deals_${slug}`, dealsPasswordInput.trim());
+    } else {
+      setDealsPasswordError(true);
+    }
+  };
 
   // Track Page Views & Inject Pixels
   useEffect(() => {
@@ -770,13 +820,12 @@ export default function PublicCatalog() {
                  </button>
                )}
                <button
-                 onClick={() => { 
-                   if (showDeals) { setShowDeals(false); }
-                   else { setShowDeals(true); setShowBazar(false); setSelectedCategory(null); setSelectedSubcategory(null); }
-                 }}
+                 onClick={handleDealsClick}
                  className={`whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all flex items-center gap-1.5 ${showDeals ? 'bg-gradient-to-r from-red-600 to-orange-500 text-white shadow-md transform scale-105' : 'bg-white border hover:bg-red-50 text-red-600 border-red-200'}`}
                >
-                 <Flame className="h-4 w-4" /> Oportunidades
+                 <Flame className="h-4 w-4" /> 
+                 Oportunidades
+                 {store?.deals_password && !dealsUnlocked && <Lock className="h-3 w-3 ml-1 opacity-70" />}
                </button>
              </div>
              
@@ -1065,6 +1114,45 @@ export default function PublicCatalog() {
                     Confirmar e Enviar Pedido
                   </>
                 )}
+             </Button>
+           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Senha VIP Oportunidades */}
+      <Dialog open={dealsPasswordModalOpen} onOpenChange={setDealsPasswordModalOpen}>
+        <DialogContent className="sm:max-w-md p-6 bg-white rounded-2xl border-red-200">
+           <DialogHeader>
+             <DialogTitle className="text-2xl font-bold font-store-title text-gray-900 border-b pb-4 mb-2 flex items-center gap-2 text-red-700">
+               <Lock className="h-6 w-6" /> Área VIP Oportunidades
+             </DialogTitle>
+           </DialogHeader>
+           
+           <div className="space-y-4 pt-2">
+             <p className="text-sm text-gray-600 mb-4">Esta seção é exclusiva para clientes VIP. Por favor, insira a senha para acessar as oportunidades especiais.</p>
+             
+             <div>
+                <Input 
+                  type="password"
+                  placeholder="Digite a senha..." 
+                  value={dealsPasswordInput}
+                  onChange={e => {
+                    setDealsPasswordInput(e.target.value);
+                    setDealsPasswordError(false);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleDealsPasswordSubmit();
+                  }}
+                  className={`h-12 bg-gray-50 focus:bg-white transition-colors text-center text-lg tracking-widest ${dealsPasswordError ? 'border-red-500 focus:ring-red-500' : 'border-gray-200'}`}
+                />
+                {dealsPasswordError && <p className="text-xs text-red-500 mt-2 text-center font-semibold">Senha incorreta. Tente novamente.</p>}
+             </div>
+             
+             <Button 
+                onClick={handleDealsPasswordSubmit} 
+                className="w-full h-12 mt-4 text-base font-bold text-white shadow-md bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 transition-all"
+             >
+                Acessar Oportunidades
              </Button>
            </div>
         </DialogContent>

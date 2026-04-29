@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Store, Camera, Link as LinkIcon, Smartphone, CreditCard, Plus, Trash2, Edit2, CalendarClock, Palette, Image as ImageIcon, ExternalLink, Globe, Megaphone, Type, LayoutGrid, List, Star, ShoppingBag } from 'lucide-react';
+import { Store, Camera, Link as LinkIcon, Smartphone, CreditCard, Plus, Trash2, Edit2, CalendarClock, Palette, Image as ImageIcon, ExternalLink, Globe, Megaphone, Type, LayoutGrid, List, Star, ShoppingBag, Flame, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 
 const Switch = ({ checked, onChange }: { checked: boolean, onChange: (v: boolean) => void }) => (
@@ -27,7 +27,8 @@ export default function StoreSettings() {
     product_layout: 'grid',
     featured_product_ids: [] as string[],
     meta_pixel_id: '',
-    ga4_measurement_id: ''
+    ga4_measurement_id: '',
+    deals_password: ''
   });
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [faviconFile, setFaviconFile] = useState<File | null>(null);
@@ -67,7 +68,8 @@ export default function StoreSettings() {
         product_layout: settings.product_layout || 'grid',
         featured_product_ids: settings.featured_product_ids || [],
         meta_pixel_id: settings.meta_pixel_id || '',
-        ga4_measurement_id: settings.ga4_measurement_id || ''
+        ga4_measurement_id: settings.ga4_measurement_id || '',
+        deals_password: settings.deals_password || ''
       });
     }
   }, [settings]);
@@ -202,7 +204,8 @@ export default function StoreSettings() {
         tiktok_url: formData.tiktok_url,
         footer_text: formData.footer_text,
         product_layout: formData.product_layout,
-        featured_product_ids: formData.featured_product_ids
+        featured_product_ids: formData.featured_product_ids,
+        deals_password: formData.deals_password || null
       };
 
       if (settings?.id) {
@@ -612,6 +615,48 @@ export default function StoreSettings() {
             <div className="p-5 bg-muted/30 border-t flex justify-end">
               <Button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending} className="w-full md:w-auto shadow-sm">
                 Salvar Elementos Extras
+              </Button>
+            </div>
+         </div>
+      )}
+
+      {/* Oportunidades VIP */}
+      {!isLoading && (
+         <div className="bg-card border rounded-xl overflow-hidden shadow-sm flex flex-col mb-6 border-red-200">
+            <div className="p-5 border-b bg-gradient-to-r from-red-50 to-orange-50 font-semibold flex items-center gap-2 text-red-700">
+               <Flame className="h-5 w-5" /> Oportunidades VIP
+            </div>
+            <div className="p-5 space-y-5">
+               <div>
+                 <label className="text-sm font-semibold mb-1 block flex items-center gap-2">
+                   <Lock className="h-4 w-4 text-red-500" /> Senha de Acesso (Opcional)
+                 </label>
+                 <Input 
+                   value={formData.deals_password} 
+                   onChange={e => setFormData({...formData, deals_password: e.target.value})} 
+                   placeholder="Ex: VIP2026" 
+                   className="max-w-xs font-mono"
+                 />
+                 <p className="text-xs text-muted-foreground mt-2">
+                   {formData.deals_password ? (
+                     <span className="text-green-700 font-medium">🔒 Protegido — Seus clientes precisarão digitar "{formData.deals_password}" para ver as oportunidades.</span>
+                   ) : (
+                     <span>Se vazio, as Oportunidades ficarão visíveis para todos os visitantes (sem senha).</span>
+                   )}
+                 </p>
+               </div>
+               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                 <p className="font-medium mb-1">💡 Como usar:</p>
+                 <ol className="list-decimal list-inside space-y-1">
+                   <li>Cadastre preços especiais nas <strong>variantes dos produtos</strong> (tela de edição)</li>
+                   <li>Defina uma senha acima para criar exclusividade</li>
+                   <li>Envie a senha por WhatsApp/Instagram para seus clientes VIP</li>
+                 </ol>
+               </div>
+            </div>
+            <div className="p-5 bg-muted/30 border-t flex justify-end">
+              <Button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending} className="w-full md:w-auto shadow-sm bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 text-white">
+                Salvar Oportunidades
               </Button>
             </div>
          </div>
