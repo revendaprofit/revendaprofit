@@ -267,10 +267,14 @@ export default function PublicCatalog() {
 
   // Check if deals were previously unlocked in this session
   useEffect(() => {
-    if (store?.deals_password) {
+    if (!store) return; // Wait until store is loaded
+
+    if (store.deals_password) {
       const savedPass = localStorage.getItem(`rp_deals_${slug}`);
       if (savedPass === store.deals_password) {
         setDealsUnlocked(true);
+      } else {
+        setDealsUnlocked(false);
       }
     } else {
       // No password set = always unlocked
