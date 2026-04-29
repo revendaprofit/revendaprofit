@@ -372,7 +372,7 @@ export default function PublicCatalog() {
           id, name, description, sale_price, image_url, image_url_2, image_url_3, video_url, category_id, subcategory_id,
           categories(id, name),
           subcategories(id, name),
-          product_variants (id, size, color, stock)
+          product_variants (id, size, color, stock, sale_price)
         `)
         .eq('owner_id', store.owner_id)
         .eq('marketing_status', 'active');
