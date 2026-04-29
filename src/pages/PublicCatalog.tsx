@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star, Sparkles } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star, Sparkles, Flame } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,9 @@ import { consolidateProducts } from '@/utils/productConsolidator';
 function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: any) {
   const inStockVariants = p.product_variants?.filter((v: any) => v.stock > 0) || [];
   const mediaList = [p.image_url, p.image_url_2, p.image_url_3, p.video_url].filter(Boolean);
+  const hasAnyDeal = inStockVariants.some((v: any) => v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price);
+  // Get the lowest variant price for display
+  const lowestVariantPrice = hasAnyDeal ? Math.min(...inStockVariants.filter((v: any) => v.sale_price && parseFloat(v.sale_price) > 0).map((v: any) => parseFloat(v.sale_price))) : null;
   
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const isFeatured = store?.featured_product_ids?.includes(p.id);
@@ -90,6 +93,14 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
            </div>
         )}
 
+        {hasAnyDeal && !isList && (
+           <div className={`absolute ${p._is_p2p ? 'top-8' : 'top-2'} left-2 z-20`}>
+              <div className="bg-gradient-to-r from-red-600 to-orange-500 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm uppercase tracking-wider animate-pulse">
+                 <Flame className="h-3 w-3" /> Oportunidade
+              </div>
+           </div>
+        )}
+
         {inStockVariants.length === 0 && (
           <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center z-20">
             <span className="bg-gray-800 text-white text-[10px] sm:text-xs font-bold px-2 py-1 rounded-full uppercase tracking-wider">Esgotado</span>
@@ -101,7 +112,14 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
         {!isList && <p className="text-[10px] sm:text-xs text-primary font-bold mb-1 opacity-80 uppercase tracking-wider">{(p.categories as any)?.name || (Array.isArray(p.categories) && (p.categories as any)[0]?.name) || 'Geral'}</p>}
         <h3 className={`font-semibold text-gray-900 leading-tight mb-2 ${isList ? 'line-clamp-1 text-sm md:text-base' : 'line-clamp-2 md:text-lg'} font-store-title`}>{p.name}</h3>
         <div className="mt-auto">
-          <p className="text-lg font-bold text-gray-900 mb-3">R$ {p.sale_price.toFixed(2)}</p>
+          {hasAnyDeal && lowestVariantPrice ? (
+            <div className="mb-3">
+              <p className="text-xs text-gray-400 line-through">R$ {p.sale_price.toFixed(2)}</p>
+              <p className="text-lg font-bold text-red-600">A partir de R$ {lowestVariantPrice.toFixed(2)}</p>
+            </div>
+          ) : (
+            <p className="text-lg font-bold text-gray-900 mb-3">R$ {p.sale_price.toFixed(2)}</p>
+          )}
           
           {inStockVariants.length > 0 ? (
             <div className="space-y-2">
@@ -127,11 +145,17 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
                         key={v.id}
                         onClick={(e) => { e.stopPropagation(); onAddToCart(p, v); }}
                         disabled={qtyInCart >= v.stock}
-                        className="text-xs font-medium px-2.5 py-1.5 rounded-md border flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors z-30 relative"
-                        title={`Estoque: ${v.stock}`}
+                        className={`text-xs font-medium px-2.5 py-1.5 rounded-md border flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors z-30 relative ${
+                          v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price ? 'border-red-300 bg-red-50 text-red-700' : ''
+                        }`}
+                        title={v.sale_price && parseFloat(v.sale_price) > 0 ? `R$ ${parseFloat(v.sale_price).toFixed(2)}` : `R$ ${p.sale_price.toFixed(2)}`}
                       >
                         {v._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
+                        {v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price && <Flame className="h-3 w-3 mr-0.5 text-red-500" />}
                         {v.size}
+                        {v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price && (
+                          <span className="ml-1 text-[9px] font-bold text-red-600">R${parseFloat(v.sale_price).toFixed(0)}</span>
+                        )}
                         {qtyInCart > 0 && <span className="ml-1.5 bg-primary text-white text-[10px] h-4 w-4 rounded-full flex items-center justify-center">{qtyInCart}</span>}
                       </button>
                     )
@@ -208,6 +232,7 @@ export default function PublicCatalog() {
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [selectedColor, setSelectedColor] = useState<string>('');
+  const [showDeals, setShowDeals] = useState(false);
 
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -476,7 +501,8 @@ export default function PublicCatalog() {
     const matchSub = (selectedCategory && selectedSubcategory) ? (pSubName === selectedSubcategory) : true;
     const matchSize = selectedSize ? p.product_variants?.some((v: any) => v.stock > 0 && v.size === selectedSize) : true;
     const matchColor = selectedColor ? p.product_variants?.some((v: any) => v.stock > 0 && v.color === selectedColor) : true;
-    return matchSearch && matchCat && matchSub && matchSize && matchColor;
+    const matchDeals = showDeals ? inStockVariants.some((v: any) => v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price) : true;
+    return matchSearch && matchCat && matchSub && matchSize && matchColor && matchDeals;
   }).sort((a: any, b: any) => {
      const featuredIds = store?.featured_product_ids || [];
      const indexA = featuredIds.indexOf(a.id);
@@ -489,7 +515,11 @@ export default function PublicCatalog() {
      return a.name.localeCompare(b.name);
   });
   
-  const totalCart = cart.reduce((acc, item) => acc + (item.product.sale_price * item.qty), 0);
+  const totalCart = cart.reduce((acc, item) => {
+    // Use variant sale_price if available, otherwise product sale_price
+    const variantPrice = item.variant?.sale_price && parseFloat(item.variant.sale_price) > 0 ? parseFloat(item.variant.sale_price) : item.product.sale_price;
+    return acc + (variantPrice * item.qty);
+  }, 0);
   const totalItems = cart.reduce((acc, item) => acc + item.qty, 0);
 
   const handleAddToCart = (product: any, variant: any) => {
@@ -608,7 +638,8 @@ export default function PublicCatalog() {
 
       let text = `*NOVO PEDIDO: ${orderCode}*\n(Via Catálogo Online)\n\nOlá, ${store.store_name}!\nGostaria de concluir a compra dos itens abaixo:\n\n`;
       cart.forEach((item, index) => {
-        text += `${index + 1}. ${item.product.name} (Tamanho: ${item.variant.size || 'Un'}, Cor: ${item.variant.color || '-'}) - Qtd: ${item.qty} un - R$ ${(item.product.sale_price * item.qty).toFixed(2)}\n`;
+        const unitPrice = item.variant?.sale_price && parseFloat(item.variant.sale_price) > 0 ? parseFloat(item.variant.sale_price) : item.product.sale_price;
+        text += `${index + 1}. ${item.product.name} (Tamanho: ${item.variant.size || 'Un'}, Cor: ${item.variant.color || '-'}) - Qtd: ${item.qty} un - R$ ${(unitPrice * item.qty).toFixed(2)}\n`;
       });
       text += `\n*Total estimado:* R$ ${totalCart.toFixed(2)}\n\nMeu nome é *${customerName}*. Aguardo confirmação e link de pagamento!`;
 
@@ -731,13 +762,22 @@ export default function PublicCatalog() {
                  <button
                    onClick={() => { 
                      if (showBazar) { setShowBazar(false); }
-                     else { setShowBazar(true); setSelectedCategory(null); setSelectedSubcategory(null); }
+                     else { setShowBazar(true); setSelectedCategory(null); setSelectedSubcategory(null); setShowDeals(false); }
                    }}
                    className={`whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all flex items-center gap-1.5 ${showBazar ? 'bg-purple-600 text-white shadow-md transform scale-105' : 'bg-white border hover:bg-purple-50 text-purple-700 border-purple-200'}`}
                  >
                    <Sparkles className="h-4 w-4" /> Bazar VIP
                  </button>
                )}
+               <button
+                 onClick={() => { 
+                   if (showDeals) { setShowDeals(false); }
+                   else { setShowDeals(true); setShowBazar(false); setSelectedCategory(null); setSelectedSubcategory(null); }
+                 }}
+                 className={`whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold transition-all flex items-center gap-1.5 ${showDeals ? 'bg-gradient-to-r from-red-600 to-orange-500 text-white shadow-md transform scale-105' : 'bg-white border hover:bg-red-50 text-red-600 border-red-200'}`}
+               >
+                 <Flame className="h-4 w-4" /> Oportunidades
+               </button>
              </div>
              
              {(() => {

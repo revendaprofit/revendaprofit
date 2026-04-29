@@ -219,7 +219,7 @@ export default function POS() {
         .from('products')
         .select(`
           id, name, sale_price, cost_price, image_url,
-          product_variants ( id, size, color, stock, partner_point_stock ( quantity, partner_points ( name ) ) )
+          product_variants ( id, size, color, stock, sale_price, partner_point_stock ( quantity, partner_points ( name ) ) )
         `)
         .eq('owner_id', user.id)
         .order('name');
@@ -664,7 +664,7 @@ export default function POS() {
            product_id: (variant as any)._parent_id ?? product.id,
            name: product.name,
            variant_desc: `${variant.size} ${variant.color}`,
-           price: product.sale_price,
+           price: (variant as any).sale_price && parseFloat((variant as any).sale_price) > 0 ? parseFloat((variant as any).sale_price) : product.sale_price,
            cost_price: product.cost_price || 0,
            quantity: 1,
            max_stock: variant.stock,

@@ -493,7 +493,7 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
              
              {/* Variantes de Tamanho no final da coluna esquerda */}
              {initialData?.id ? (
-                <ProductVariantsSection productId={initialData.id} />
+                <ProductVariantsSection productId={initialData.id} productSalePrice={Number(formData.sale_price) || 0} />
              ) : (
                 <div className="text-sm text-amber-600 bg-amber-50 p-4 rounded mt-4 border border-amber-200 shadow-sm">
                    <span className="font-semibold">⚠️ Atenção:</span> Salve o produto principal (esta janela) primeiro para liberar o preenchimento da tabela de Medidas e Estoques variados.
