@@ -344,6 +344,25 @@ export default function StockImportDialog() {
           const existing = item.existingMatch!;
           setStatus(`Atualizando (${idx + 1}/${existingItems.length}): ${item.fileName.substring(0, 30)}...`);
 
+          // Update product-level data (like images) if we are replacing or if the image is missing
+          const updatePayload: any = {};
+          if (item.action === 'replace') {
+             if (item.fileCostPrice) updatePayload.cost_price = item.fileCostPrice;
+             if (item.fileSalePrice) updatePayload.sale_price = item.fileSalePrice;
+             if (item.categoryId) updatePayload.category_id = item.categoryId;
+             if (item.supplierId) updatePayload.supplier_id = item.supplierId;
+             if (item.subcategoryId) updatePayload.subcategory_id = item.subcategoryId;
+             if (item.description) updatePayload.description = item.description;
+          }
+          // Always try to restore image URLs if they are provided in the spreadsheet
+          if (item.imageUrl) updatePayload.image_url = item.imageUrl;
+          if (item.imageUrl2) updatePayload.image_url_2 = item.imageUrl2;
+          if (item.imageUrl3) updatePayload.image_url_3 = item.imageUrl3;
+
+          if (Object.keys(updatePayload).length > 0) {
+             await supabase.from('products').update(updatePayload).eq('id', existing.id);
+          }
+
           for (const fv of item.fileVariants) {
             // Find matching existing variant by size+color
             const normalizedSize = normalizeForComparison(fv.size);
@@ -377,10 +396,11 @@ export default function StockImportDialog() {
         }
       }
 
-      // 3. Initiate background image download for new items with external URLs
+      // 3. Initiate background image download for new items AND existing items with external URLs
       const imagesToDownload: QueueItem[] = [];
-      for (const item of newItems) {
-         const pId = productNameToId[item.fileName];
+      const allProcessedItems = [...newItems, ...existingItems];
+      for (const item of allProcessedItems) {
+         const pId = item.existingMatch ? item.existingMatch.id : productNameToId[item.fileName];
          if (pId) {
              if (item.imageUrl && !item.imageUrl.includes('supabase.co')) {
                 imagesToDownload.push({ id: pId, url: item.imageUrl, column: 'image_url' });
