@@ -304,6 +304,16 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
   const processExternalMedia = async (url: string, isVideo: boolean) => {
       if(!url || url.includes('supabase.co')) return url;
       try {
+         // ─── Check shared image cache first ───
+         if (!isVideo) {
+            const { data: cached } = await supabase
+              .from('image_cache')
+              .select('stored_url')
+              .eq('source_url', url)
+              .maybeSingle();
+            if (cached?.stored_url) return cached.stored_url;
+         }
+
          let res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
          if (!res.ok) {
              res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
@@ -323,7 +333,16 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
          const filePath = `${Math.random()}.${ext}`;
          const { error } = await supabase.storage.from('product-images').upload(filePath, fileToUpload);
          if (error) return url;
-         return supabase.storage.from('product-images').getPublicUrl(filePath).data.publicUrl;
+         const finalUrl = supabase.storage.from('product-images').getPublicUrl(filePath).data.publicUrl;
+
+         // ─── Save to shared cache for future users ───
+         if (!isVideo) {
+            await supabase
+              .from('image_cache')
+              .upsert({ source_url: url, stored_url: finalUrl }, { onConflict: 'source_url' });
+         }
+
+         return finalUrl;
       } catch(e) { return url; }
   };
 

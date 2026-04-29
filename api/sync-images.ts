@@ -51,6 +51,27 @@ export default async function handler(req: any, res: any) {
     }
 
     try {
+      // ─── STEP 1: Check the shared image cache ───
+      const { data: cached } = await supabase
+        .from('image_cache')
+        .select('stored_url')
+        .eq('source_url', url)
+        .maybeSingle();
+
+      if (cached?.stored_url) {
+        // Cache HIT! Just update the product with the already-downloaded URL
+        const { error: dbError } = await supabase
+          .from('products')
+          .update({ [column]: cached.stored_url })
+          .eq('id', id);
+
+        if (dbError) throw dbError;
+
+        results.push({ id, column, status: 'cache_hit', finalUrl: cached.stored_url });
+        continue;
+      }
+
+      // ─── STEP 2: Cache MISS → Download the image ───
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
       
@@ -80,17 +101,20 @@ export default async function handler(req: any, res: any) {
 
       const finalUrl = publicUrlData.publicUrl;
 
-      // Update the database
-      const updateData = { [column]: finalUrl };
-      
+      // ─── STEP 3: Update the product ───
       const { error: dbError } = await supabase
         .from('products')
-        .update(updateData)
+        .update({ [column]: finalUrl })
         .eq('id', id);
 
       if (dbError) throw dbError;
 
-      results.push({ id, column, status: 'success', finalUrl });
+      // ─── STEP 4: Save to shared cache for future users ───
+      await supabase
+        .from('image_cache')
+        .upsert({ source_url: url, stored_url: finalUrl }, { onConflict: 'source_url' });
+
+      results.push({ id, column, status: 'downloaded_and_cached', finalUrl });
 
     } catch (err: any) {
       console.error(`Error processing ${id}:`, err.message);
