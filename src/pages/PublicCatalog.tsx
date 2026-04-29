@@ -10,7 +10,16 @@ import { toast } from 'sonner';
 import { consolidateProducts } from '@/utils/productConsolidator';
 
 function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: any) {
-  const inStockVariants = p.product_variants?.filter((v: any) => v.stock > 0) || [];
+  const rawInStockVariants = p.product_variants?.filter((v: any) => v.stock > 0) || [];
+  const inStockVariants = Object.values(rawInStockVariants.reduce((acc: Record<string, any>, v: any) => {
+    const key = `${v.size || ''}_${v.color || ''}`.trim();
+    if (!acc[key]) {
+      acc[key] = v;
+    } else if (acc[key]._is_p2p && !v._is_p2p) {
+      acc[key] = v;
+    }
+    return acc;
+  }, {})) as any[];
   const mediaList = [p.image_url, p.image_url_2, p.image_url_3, p.video_url].filter(Boolean);
   const hasAnyDeal = inStockVariants.some((v: any) => v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price);
   // Get the lowest variant price for display
@@ -1030,7 +1039,16 @@ export default function PublicCatalog() {
                 )}
                 {/* Variantes no Modal */}
                 {(() => {
-                  const modalInStock = selectedProduct?.product_variants?.filter((v: any) => v.stock > 0) || [];
+                  const rawModalInStock = selectedProduct?.product_variants?.filter((v: any) => v.stock > 0) || [];
+                  const modalInStock = Object.values(rawModalInStock.reduce((acc: Record<string, any>, v: any) => {
+                    const key = `${v.size || ''}_${v.color || ''}`.trim();
+                    if (!acc[key]) {
+                      acc[key] = v;
+                    } else if (acc[key]._is_p2p && !v._is_p2p) {
+                      acc[key] = v;
+                    }
+                    return acc;
+                  }, {})) as any[];
                   if (modalInStock.length === 0) return (
                     <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm font-semibold border border-red-100 flex items-center justify-center">Esgotado no momento</div>
                   );
