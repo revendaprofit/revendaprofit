@@ -527,7 +527,6 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
              </div>
              
 
-             </div>
           </div>
         </div>
           
