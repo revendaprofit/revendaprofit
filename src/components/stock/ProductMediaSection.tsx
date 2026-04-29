@@ -11,10 +11,13 @@ interface MediaProps {
    video: string;
    onChangeImages: (urls: string[]) => void;
    onChangeVideo: (url: string) => void;
+   onScrapeUrl?: (url: string) => void;
+   isScraping?: boolean;
 }
 
-export default function ProductMediaSection({ images, video, onChangeImages, onChangeVideo }: MediaProps) {
+export default function ProductMediaSection({ images, video, onChangeImages, onChangeVideo, onScrapeUrl, isScraping }: MediaProps) {
   const [uploading, setUploading] = useState(false);
+  const [importUrl, setImportUrl] = useState('');
 
   const handleUploadImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -78,7 +81,22 @@ export default function ProductMediaSection({ images, video, onChangeImages, onC
       
       {/* Photos */}
       <div className="space-y-2">
-         <label className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Fotos (Até 3)</label>
+         <div className="flex items-center justify-between">
+             <label className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Fotos (Até 3)</label>
+             {onScrapeUrl && (
+                <div className="flex items-center gap-2 max-w-sm w-full ml-auto">
+                   <Input 
+                      placeholder="Colar link de um site/fornecedor..." 
+                      className="h-8 text-xs flex-1" 
+                      value={importUrl} 
+                      onChange={e => setImportUrl(e.target.value)}
+                   />
+                   <Button size="sm" className="h-8 text-xs bg-primary/10 text-primary hover:bg-primary/20" disabled={isScraping || !importUrl} onClick={() => { onScrapeUrl(importUrl); setImportUrl(''); }}>
+                      {isScraping ? 'Buscando...' : 'Buscar Fotos'}
+                   </Button>
+                </div>
+             )}
+         </div>
          <div className="flex gap-4">
             {images.map((img, i) => (
                <div key={i} className="relative group h-24 w-24 rounded-md border overflow-hidden">

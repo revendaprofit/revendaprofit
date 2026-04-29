@@ -209,6 +209,98 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
      }
   };
 
+  const handleScrapeImagesOnly = async (url: string) => {
+     if (!url) return;
+     setIsImporting(true);
+     try {
+       let htmlContent = "";
+       let formattedUrl = url.trim();
+       if (!/^https?:\/\//i.test(formattedUrl)) formattedUrl = 'https://' + formattedUrl;
+
+       try {
+           const res1 = await fetch(`https://corsproxy.io/?${encodeURIComponent(formattedUrl)}`);
+           if (!res1.ok) throw new Error("CorsProxy.io falhou");
+           htmlContent = await res1.text();
+           if (!htmlContent || htmlContent.trim() === '') throw new Error("CorsProxy.io vazio");
+       } catch (err1) {
+           try {
+               const res2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(formattedUrl)}`);
+               if (!res2.ok) throw new Error("AllOrigins falhou");
+               const data2 = await res2.json();
+               htmlContent = data2.contents;
+               if (!htmlContent || htmlContent.trim() === '') throw new Error("AllOrigins vazio");
+           } catch (err2) {
+               const res3 = await fetch(`https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(formattedUrl)}`);
+               if (!res3.ok) throw new Error("CodeTabs falhou");
+               htmlContent = await res3.text();
+           }
+       }
+
+       if (!htmlContent) throw new Error("ConteúdoHTML vazio retornado.");
+
+       const parser = new DOMParser();
+       const doc = parser.parseFromString(htmlContent, "text/html");
+
+       let allImgs = new Set<string>();
+       let allVids = new Set<string>();
+
+       const ogImage = doc.querySelector('meta[property="og:image"]')?.getAttribute('content');
+       const ogVideo = doc.querySelector('meta[property="og:video"]')?.getAttribute('content');
+       if(ogImage) allImgs.add(ogImage);
+       if(ogVideo) allVids.add(ogVideo);
+
+       const ldJsons = doc.querySelectorAll('script[type="application/ld+json"]');
+       ldJsons.forEach(script => {
+           try {
+             const data = JSON.parse(script.textContent || '{}');
+             let candidates: any[] = [];
+             if (Array.isArray(data)) candidates = data.filter(d => d['@type'] === 'Product');
+             else if (data['@type'] === 'Product') candidates = [data];
+             else if (data['@graph']) candidates = data['@graph'].filter((d:any) => d['@type'] === 'Product');
+             
+             candidates.forEach(product => {
+                if (product.image) {
+                   if (Array.isArray(product.image)) product.image.forEach((i:any) => allImgs.add(typeof i === 'string' ? i : i?.url || ''));
+                   else if (typeof product.image === 'string') allImgs.add(product.image);
+                   else if (product.image?.url) allImgs.add(product.image.url);
+                }
+             });
+           } catch(e) {}
+       });
+
+       doc.querySelectorAll('img').forEach(img => {
+          let src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-zoom-image') || '';
+          if (src && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(src)) {
+             if(!src.startsWith('http')) {
+                try { src = new URL(src, formattedUrl).toString(); } catch(e){}
+             }
+             allImgs.add(src);
+          }
+       });
+
+       doc.querySelectorAll('video source, video[src]').forEach(v => {
+          const src = v.getAttribute('src') || '';
+          if (src && src.startsWith('http')) allVids.add(src);
+       });
+
+       const imgArray = Array.from(allImgs).filter(i => i.startsWith('http') && !i.includes('data:image'));
+       const vidArray = Array.from(allVids).filter(v => v.startsWith('http'));
+
+       setScrapedImages(imgArray);
+       setScrapedVideos(vidArray);
+
+       if (imgArray.length > 0 || vidArray.length > 0) {
+          toast.success(`${imgArray.length} fotos encontradas! Selecione as que deseja adicionar.`);
+       } else {
+          toast.error("Nenhuma foto encontrada nesse link.");
+       }
+     } catch (err: any) {
+       toast.error("Não foi possível puxar as fotos dessa URL.");
+     } finally {
+       setIsImporting(false);
+     }
+  };
+
   const processExternalMedia = async (url: string, isVideo: boolean) => {
       if(!url || url.includes('supabase.co')) return url;
       try {
@@ -435,12 +527,7 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
              </div>
              
 
-             <ProductMediaSection 
-                images={formData.image_urls} 
-                video={formData.video_url}
-                onChangeImages={(urls) => setFormData({...formData, image_urls: urls})}
-                onChangeVideo={(url) => setFormData({...formData, video_url: url})} 
-             />
+             </div>
           </div>
         </div>
           
@@ -481,7 +568,9 @@ export default function ProductFormDialog({ open, onOpenChange, initialData }: {
              images={formData.image_urls} 
              video={formData.video_url}
              onChangeImages={(urls) => setFormData({...formData, image_urls: urls})}
-             onChangeVideo={(url) => setFormData({...formData, video_url: url})} 
+             onChangeVideo={(url) => setFormData({...formData, video_url: url})}
+             onScrapeUrl={handleScrapeImagesOnly}
+             isScraping={isImporting}
           />
           
 
