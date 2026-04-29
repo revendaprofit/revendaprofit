@@ -417,14 +417,16 @@ export default function PublicCatalog() {
        const cat = Array.isArray(p.categories) ? p.categories[0] : p.categories;
        const sub = Array.isArray(p.subcategories) ? p.subcategories[0] : p.subcategories;
        
-       if (cat && cat.id) {
-          if (!map.has(cat.id)) {
-             map.set(cat.id, { id: cat.id, name: cat.name, subcategories: [] });
+       if (cat && cat.name) {
+          const normCatName = cat.name.trim().toLowerCase();
+          if (!map.has(normCatName)) {
+             map.set(normCatName, { id: normCatName, name: cat.name.trim(), subcategories: [] });
           }
-          if (sub && sub.id) {
-             const mCat = map.get(cat.id)!;
-             if (!mCat.subcategories.find(s => s.id === sub.id)) {
-                 mCat.subcategories.push({ id: sub.id, name: sub.name });
+          if (sub && sub.name) {
+             const mCat = map.get(normCatName)!;
+             const normSubName = sub.name.trim().toLowerCase();
+             if (!mCat.subcategories.find(s => s.id === normSubName)) {
+                 mCat.subcategories.push({ id: normSubName, name: sub.name.trim() });
              }
           }
        }
@@ -463,12 +465,15 @@ export default function PublicCatalog() {
     const inStockVariants = p.product_variants?.filter((v: any) => (v.stock || 0) > 0) || [];
     if (inStockVariants.length === 0) return false;
 
-    const pCatId = Array.isArray(p.categories) ? p.categories[0]?.id : p.categories?.id;
-    const pSubId = Array.isArray(p.subcategories) ? p.subcategories[0]?.id : p.subcategories?.id;
+    const pCat = Array.isArray(p.categories) ? p.categories[0] : p.categories;
+    const pSub = Array.isArray(p.subcategories) ? p.subcategories[0] : p.subcategories;
+    
+    const pCatName = pCat?.name?.trim().toLowerCase();
+    const pSubName = pSub?.name?.trim().toLowerCase();
     
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    const matchCat = selectedCategory ? (pCatId === selectedCategory) : true;
-    const matchSub = (selectedCategory && selectedSubcategory) ? (pSubId === selectedSubcategory) : true;
+    const matchCat = selectedCategory ? (pCatName === selectedCategory) : true;
+    const matchSub = (selectedCategory && selectedSubcategory) ? (pSubName === selectedSubcategory) : true;
     const matchSize = selectedSize ? p.product_variants?.some((v: any) => v.stock > 0 && v.size === selectedSize) : true;
     const matchColor = selectedColor ? p.product_variants?.some((v: any) => v.stock > 0 && v.color === selectedColor) : true;
     return matchSearch && matchCat && matchSub && matchSize && matchColor;
