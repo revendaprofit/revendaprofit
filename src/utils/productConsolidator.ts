@@ -4,51 +4,43 @@ export function consolidateProducts(products: any[]) {
   // Helper to normalize names for comparison
   const normalize = (name: string) => name.toLowerCase().trim().replace(/^(🏪|🤝)\s*/, '');
 
+  // Helper to determine source type
+  const getSourceType = (prod: any): string => {
+    if (prod._is_p2p) return 'p2p';
+    if (prod._is_hub) return 'hub';
+    return 'local';
+  };
+
   for (const p of products) {
     const normName = normalize(p.name);
+    const sourceType = getSourceType(p);
     
-    if (!map.has(normName)) {
+    // Use a composite key: name + source type
+    // This prevents P2P products from being merged with local products
+    // (they have different owners and need separate cart handling)
+    const key = `${normName}__${sourceType}`;
+    
+    if (!map.has(key)) {
        // Clone the product and its variants so we don't mutate the original
-       map.set(normName, { ...p, product_variants: [...(p.product_variants || [])] });
+       map.set(key, { ...p, product_variants: [...(p.product_variants || [])] });
     } else {
-       const existing = map.get(normName);
+       const existing = map.get(key);
        
-       // Determine priority: Local (3) > Hub (2) > P2P (1)
-       const getScore = (prod: any) => {
-          if (!prod._is_hub && !prod._is_p2p) return 3; // Local
-          if (prod._is_hub) return 2; // Hub
-          return 1; // P2P
-       };
-       
-       let base = existing;
-       let other = p;
-       
-       if (getScore(p) > getScore(existing)) {
-          // p has higher priority, it becomes the base
-          base = { ...p, product_variants: [...(p.product_variants || [])] };
-          other = existing;
-          map.set(normName, base);
-       }
-       
-       // Merge variants from 'other' into 'base'
-       const baseVariantsNorm = new Set(base.product_variants.map((v: any) => `${(v.size || '').toLowerCase()}-${(v.color || '').toLowerCase()}`));
-       
-       for (const v of other.product_variants || []) {
-           const vNorm = `${(v.size || '').toLowerCase()}-${(v.color || '').toLowerCase()}`;
-           
-           // Always add variants from other sources (they will render with icons like Hub or P2P if they overlap)
-           base.product_variants.push({
+       // Only merge variants within the same source type
+       // (e.g. two hub imports of same product, or two local entries)
+       for (const v of p.product_variants || []) {
+           existing.product_variants.push({
                ...v,
                // Inject parent tracking info into the variant so addToCart knows its true origin
-               _is_p2p: other._is_p2p,
-               _is_hub: other._is_hub,
-               _parent_id: other.id, 
-               _p2p_partnership_id: other._p2p_partnership_id,
-               _p2p_owner_id: other._p2p_owner_id,
-               _p2p_creditor_id: other._p2p_creditor_id,
-               _p2p_original_owner_id: other._p2p_original_owner_id,
-               _hub_product_id: other._hub_product_id,
-               _supplier_id: other._supplier_id,
+               _is_p2p: p._is_p2p,
+               _is_hub: p._is_hub,
+               _parent_id: p.id, 
+               _p2p_partnership_id: p._p2p_partnership_id,
+               _p2p_owner_id: p._p2p_owner_id,
+               _p2p_creditor_id: p._p2p_creditor_id,
+               _p2p_original_owner_id: p._p2p_original_owner_id,
+               _hub_product_id: p._hub_product_id,
+               _supplier_id: p._supplier_id,
            });
        }
     }
