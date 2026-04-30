@@ -45,6 +45,8 @@ export function consolidateProducts(products: any[]) {
                _parent_id: other.id, 
                _p2p_partnership_id: other._p2p_partnership_id,
                _p2p_owner_id: other._p2p_owner_id,
+               _p2p_creditor_id: other._p2p_creditor_id,
+               _p2p_original_owner_id: other._p2p_original_owner_id,
                _hub_product_id: other._hub_product_id,
                _supplier_id: other._supplier_id,
            });
