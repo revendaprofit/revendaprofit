@@ -32,7 +32,8 @@ export default function PartnershipOrdersSheet({ partnershipId, partnerEmail }: 
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return data;
+      // Filtrar pedidos de estoque próprio (seller === owner): esses não precisam de confirmação manual
+      return (data || []).filter((o: any) => o.seller_id !== o.owner_id);
     },
     enabled: !!user
   });
