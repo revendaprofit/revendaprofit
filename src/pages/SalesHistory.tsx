@@ -228,6 +228,9 @@ export default function SalesHistory() {
     if (status === 'open') {
       return <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-lg text-xs font-semibold">Em Aberto</span>;
     }
+    if (status === 'p2p_settlement') {
+      return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold">Acerto de Contas</span>;
+    }
     if (status === 'rejected_p2p') {
       return <span className="px-2 py-1 bg-red-600 text-white rounded-lg text-[10px] font-black uppercase shadow-sm animate-pulse whitespace-nowrap">🚨 Ação Nec: Parceiro Recusou</span>;
     }
@@ -386,6 +389,7 @@ export default function SalesHistory() {
                  <option value="">Todos</option>
                  <option value="completed">Concluída</option>
                  <option value="open">Em aberto</option>
+                 <option value="p2p_settlement">Acerto de Contas</option>
                  <option value="cancelled">Cancelada</option>
                  <option value="rejected_p2p">Ação Necessária (Recusada)</option>
               </select>

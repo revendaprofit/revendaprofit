@@ -277,6 +277,8 @@ export default function POS() {
           }
           return p;
       });
+      
+      console.log("[DEBUG POS] Local P2P items:", localProducts.filter(p => p._is_p2p).length);
 
       // 2. Produtos importados do Hub
       let hubProducts: Product[] = [];
@@ -475,7 +477,7 @@ export default function POS() {
           orderGroups.push({ type: 'main', items: localAndHubItems, status: hasInstallments ? 'installment' : 'completed' });
       }
       if (p2pItems.length > 0) {
-          orderGroups.push({ type: 'p2p', items: p2pItems, status: 'open' });
+          orderGroups.push({ type: 'p2p', items: p2pItems, status: 'p2p_settlement' });
       }
 
       const totalCartValue = cart.reduce((acc, c) => acc + (c.price * c.quantity), 0);
@@ -743,13 +745,15 @@ export default function POS() {
   const handleValidationBeforeCheckout = () => {
      if (cart.length === 0) return toast.error("Carrinho vazio");
      const hasLocal = cart.some(c => !c._is_p2p);
-     const hasP2p = cart.some(c => c._is_p2p);
+     const hasP2P = cart.some(c => c._is_p2p);
+     const requiresShipping = deliveryMode === 'postal' || deliveryMode === 'app';
+     const saleStatus = requiresShipping ? 'open' : (hasP2P ? 'p2p_settlement' : 'completed');
      
      if (saleOrigin === 'Ponto Parceiro' && !checkoutPartnerPointId) {
          return toast.error("Selecione abaixo o Ponto Parceiro no qual ocorreu a venda.");
      }
 
-     if (hasLocal && hasP2p) {
+     if (hasLocal && hasP2P) {
         setShowMixedCartWarning(true);
         return;
      }
