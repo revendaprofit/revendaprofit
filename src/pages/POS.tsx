@@ -9,7 +9,7 @@ import { consolidateProducts } from '@/utils/productConsolidator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 type Customer = { id: string; name: string; phone?: string };
-type Product = { id: string; name: string; sale_price: number; cost_price: number; image_url: string; product_variants: Variant[]; _is_hub?: boolean; _hub_product_id?: string; _supplier_id?: string; _is_p2p?: boolean; _p2p_partnership_id?: string; _p2p_owner_id?: string; };
+type Product = { id: string; name: string; sale_price: number; cost_price: number; image_url: string; product_variants: Variant[]; _is_hub?: boolean; _hub_product_id?: string; _supplier_id?: string; _is_p2p?: boolean; _p2p_partnership_id?: string; _p2p_owner_id?: string; _p2p_creditor_id?: string; _p2p_original_owner_id?: string; };
 type Variant = { id: string; size: string; color: string; stock: number; _partner_allocated_qty?: number; _partner_names?: string[] };
 type CartItem = { 
   variant_id: string; 
@@ -26,6 +26,8 @@ type CartItem = {
   _is_p2p?: boolean;
   _p2p_partnership_id?: string;
   _p2p_owner_id?: string;
+  _p2p_creditor_id?: string;
+  _p2p_original_owner_id?: string;
 };
 
 export default function POS() {
@@ -225,7 +227,7 @@ export default function POS() {
         .order('name');
       
       if (error) throw error;
-      const localProducts = (localData || []).map((p: any) => ({
+      let localProducts = (localData || []).map((p: any) => ({
         ...p,
         product_variants: (p.product_variants || []).map((v: any) => {
           const partnerStock = v.partner_point_stock || [];
@@ -238,6 +240,43 @@ export default function POS() {
           };
         })
       })) as Product[];
+
+      // Identificar se produtos locais estão vinculados a alguma parceria ativa
+      const localProductIds = localProducts.map(p => p.id);
+      let localSharedMap: Record<string, { partnership_id: string, other_partner_id: string }> = {};
+      
+      if (localProductIds.length > 0) {
+        const { data: sharedData } = await supabase
+          .from('partnership_shared_products')
+          .select('product_id, partnership_id, partnerships!inner(requester_id, receiver_id, status)')
+          .in('product_id', localProductIds)
+          .eq('partnerships.status', 'active');
+          
+        if (sharedData) {
+          sharedData.forEach((sd: any) => {
+             const partnerId = sd.partnerships.requester_id === user.id ? sd.partnerships.receiver_id : sd.partnerships.requester_id;
+             localSharedMap[sd.product_id] = {
+                partnership_id: sd.partnership_id,
+                other_partner_id: partnerId
+             };
+          });
+        }
+      }
+
+      localProducts = localProducts.map(p => {
+          const shared = localSharedMap[p.id];
+          if (shared) {
+             return {
+                ...p,
+                _is_p2p: true,
+                _p2p_partnership_id: shared.partnership_id,
+                _p2p_owner_id: user.id,
+                _p2p_original_owner_id: user.id,
+                _p2p_creditor_id: shared.other_partner_id
+             };
+          }
+          return p;
+      });
 
       // 2. Produtos importados do Hub
       let hubProducts: Product[] = [];
@@ -290,7 +329,9 @@ export default function POS() {
             product_variants: p.variants || [],
             _is_p2p: true,
             _p2p_partnership_id: p.p2p_partnership_id,
-            _p2p_owner_id: p.p2p_owner_id
+            _p2p_owner_id: p.p2p_owner_id,
+            _p2p_original_owner_id: p.p2p_owner_id,
+            _p2p_creditor_id: p.p2p_owner_id
          }));
       }
 
@@ -543,37 +584,48 @@ export default function POS() {
                  const contract = activePartnerships?.find(p => p.id === p2pItem._p2p_partnership_id);
                  if (!contract) continue;
 
+                 const originalOwnerId = p2pItem._p2p_original_owner_id || p2pItem._p2p_owner_id || user.id;
+                 const creditorId = p2pItem._p2p_creditor_id || p2pItem._p2p_owner_id || user.id;
+                 const isMyOwnProduct = originalOwnerId === user.id;
+
                  const { data: pOrder, error: pOrderErr } = await supabase.from('partnership_orders').insert({
                     partnership_id: contract.id,
                     seller_id: user.id,
-                    owner_id: p2pItem._p2p_owner_id,
+                    owner_id: originalOwnerId,
                     product_id: p2pItem.product_id,
                     variant_id: p2pItem.variant_id,
                     sale_id: sale.id,
                     quantity: p2pItem.quantity,
                     sale_price: p2pItem.price,
-                    status: 'pending_confirmation'
+                    status: isMyOwnProduct ? 'confirmed' : 'pending_confirmation'
                  }).select('id').single();
 
                  if (!pOrderErr && pOrder) {
                     const customCostPerc = parseFloat(contract.cost_recovery_owner_percent) / 100;
-                    let costSliceOwner = 0;
-                    if (contract.cost_recovery_type === 'owner_100') costSliceOwner = p2pItem.cost_price;
-                    else if (contract.cost_recovery_type === 'shared_50_50') costSliceOwner = p2pItem.cost_price * 0.5;
-                    else if (contract.cost_recovery_type === 'custom') costSliceOwner = p2pItem.cost_price * customCostPerc;
+                    let costSliceCreditor = 0;
+                    
+                    if (contract.cost_recovery_type === 'owner_100') {
+                        costSliceCreditor = isMyOwnProduct ? 0 : p2pItem.cost_price;
+                    } else if (contract.cost_recovery_type === 'shared_50_50') {
+                        costSliceCreditor = p2pItem.cost_price * 0.5;
+                    } else if (contract.cost_recovery_type === 'custom') {
+                        costSliceCreditor = isMyOwnProduct 
+                            ? p2pItem.cost_price * (1 - customCostPerc) 
+                            : p2pItem.cost_price * customCostPerc;
+                    }
                     
                     const lucro = Math.max(0, p2pItem.price - p2pItem.cost_price);
-                    const profitSliceOwner = lucro * (parseFloat(contract.profit_split_partner_percent) / 100);
-                    const totalOwedToOwner = (costSliceOwner + profitSliceOwner) * p2pItem.quantity;
+                    const profitSliceCreditor = lucro * (parseFloat(contract.profit_split_partner_percent) / 100);
+                    const totalOwedToCreditor = (costSliceCreditor + profitSliceCreditor) * p2pItem.quantity;
                     
                     await supabase.from('partnership_settlements').insert({
                        partnership_id: contract.id,
                        partnership_order_id: pOrder.id,
                        debtor_id: user.id,
-                       creditor_id: p2pItem._p2p_owner_id,
-                       cost_slice: costSliceOwner * p2pItem.quantity,
-                       profit_slice: profitSliceOwner * p2pItem.quantity,
-                       amount_owed: totalOwedToOwner,
+                       creditor_id: creditorId,
+                       cost_slice: costSliceCreditor * p2pItem.quantity,
+                       profit_slice: profitSliceCreditor * p2pItem.quantity,
+                       amount_owed: totalOwedToCreditor,
                        status: 'open'
                     });
                  }
@@ -673,7 +725,9 @@ export default function POS() {
            _supplier_id: (variant as any)._supplier_id ?? product._supplier_id,
            _is_p2p: (variant as any)._is_p2p ?? product._is_p2p,
            _p2p_partnership_id: (variant as any)._p2p_partnership_id ?? product._p2p_partnership_id,
-           _p2p_owner_id: (variant as any)._p2p_owner_id ?? product._p2p_owner_id
+           _p2p_owner_id: (variant as any)._p2p_owner_id ?? product._p2p_owner_id,
+           _p2p_creditor_id: (variant as any)._p2p_creditor_id ?? product._p2p_creditor_id,
+           _p2p_original_owner_id: (variant as any)._p2p_original_owner_id ?? product._p2p_original_owner_id
        }]);
     }
   };
