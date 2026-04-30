@@ -746,8 +746,6 @@ export default function POS() {
      if (cart.length === 0) return toast.error("Carrinho vazio");
      const hasLocal = cart.some(c => !c._is_p2p);
      const hasP2P = cart.some(c => c._is_p2p);
-     const requiresShipping = deliveryMode === 'postal' || deliveryMode === 'app';
-     const saleStatus = requiresShipping ? 'open' : (hasP2P ? 'p2p_settlement' : 'completed');
      
      if (saleOrigin === 'Ponto Parceiro' && !checkoutPartnerPointId) {
          return toast.error("Selecione abaixo o Ponto Parceiro no qual ocorreu a venda.");
