@@ -49,19 +49,14 @@ export function consolidateProducts(products: any[]) {
            });
        }
        
-       // If the OTHER source is P2P, replace matching base (local) variants with the P2P version
-       // This ensures partnership products always go through the P2P checkout flow
+       // If the OTHER source is P2P, keep BOTH the local variant AND the P2P variant
+       // so the user can choose to sell from their own stock (normal flow) or from 
+       // the partner's stock (P2P flow with settlement).
        if (other._is_p2p) {
-           base.product_variants = base.product_variants.map((bv: any) => {
-               const bKey = `${(bv.size || '').toLowerCase()}-${(bv.color || '').toLowerCase()}`;
-               const p2pVariant = otherVariantsByKey.get(bKey);
-               if (p2pVariant) {
-                   // Replace local variant with P2P variant (preserves stock from P2P source)
-                   otherVariantsByKey.delete(bKey); // consumed
-                   return p2pVariant;
-               }
-               return bv; // no P2P match, keep local
-           });
+           // Don't replace — just remove consumed keys so they aren't double-added below
+           // Actually we want ALL P2P variants to be added, so we leave otherVariantsByKey intact.
+           // We only need to avoid the old "replace" logic. The remaining loop at line 74+
+           // will push every P2P variant (including overlapping ones) into the array.
        }
        // If the BASE is P2P and other is local, replace base P2P variants that match local
        else if (base._is_p2p && !other._is_p2p) {

@@ -241,42 +241,11 @@ export default function POS() {
         })
       })) as Product[];
 
-      // Identificar se produtos locais estão vinculados a alguma parceria ativa
-      const localProductIds = localProducts.map(p => p.id);
-      let localSharedMap: Record<string, { partnership_id: string, other_partner_id: string }> = {};
-      
-      if (localProductIds.length > 0) {
-        const { data: sharedData } = await supabase
-          .from('partnership_shared_products')
-          .select('product_id, partnership_id, partnerships!inner(requester_id, receiver_id, status)')
-          .in('product_id', localProductIds)
-          .eq('partnerships.status', 'active');
-          
-        if (sharedData) {
-          sharedData.forEach((sd: any) => {
-             const partnerId = sd.partnerships.requester_id === user.id ? sd.partnerships.receiver_id : sd.partnerships.requester_id;
-             localSharedMap[sd.product_id] = {
-                partnership_id: sd.partnership_id,
-                other_partner_id: partnerId
-             };
-          });
-        }
-      }
-
-      localProducts = localProducts.map(p => {
-          const shared = localSharedMap[p.id];
-          if (shared) {
-             return {
-                ...p,
-                _is_p2p: true,
-                _p2p_partnership_id: shared.partnership_id,
-                _p2p_owner_id: user.id,
-                _p2p_original_owner_id: user.id,
-                _p2p_creditor_id: shared.other_partner_id
-             };
-          }
-          return p;
-      });
+      // Note: We no longer mark local products as _is_p2p when the current user is the owner.
+      // If teamwodbrasil owns "Top Las Vegas" and shared it with her partner, selling from 
+      // HER OWN stock should follow the normal (local) checkout flow — no settlement needed.
+      // The P2P flow is only triggered when selling from the PARTNER's inventory, which comes
+      // from the get_my_p2p_shared_products RPC (step 3 below).
       
       console.log("[DEBUG POS] Local P2P items:", localProducts.filter(p => p._is_p2p).length);
 
@@ -812,10 +781,12 @@ export default function POS() {
                               <p className="font-semibold text-sm text-gray-900">{p.name}</p>
                               <div className="flex flex-wrap gap-2">
                                  {av.length > 0 ? av.map(v => (
-                                   <Button key={v.id} variant="outline" size="sm" className="h-7 text-xs border-primary/30 hover:border-primary hover:bg-primary/5 px-2" onClick={() => {addToCart(p,v); setSearch('');}}>
-                                      {(v as any)._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
-                                      {v.size} {v.color && `- ${v.color}`}
-                                   </Button>
+                                    <Button key={v.id} variant="outline" size="sm" className={`h-7 text-xs px-2 ${(v as any)._is_p2p ? 'border-blue-300 bg-blue-50/50 hover:border-blue-500 hover:bg-blue-100/50 text-blue-700' : 'border-primary/30 hover:border-primary hover:bg-primary/5'}`} onClick={() => {addToCart(p,v); setSearch('');}}>
+                                       {(v as any)._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
+                                       {v.size} {v.color && `- ${v.color}`}
+                                       {(v as any)._is_p2p && <span className="ml-1 text-[9px] text-blue-400">(Parceira)</span>}
+                                       <span className="ml-1 text-[9px] opacity-50">({v.stock})</span>
+                                    </Button>
                                  )) : <span className="text-[10px] text-red-500 border border-red-100 bg-red-50 px-2 py-1 rounded">Sem estoque</span>}
                               </div>
                            </div>
