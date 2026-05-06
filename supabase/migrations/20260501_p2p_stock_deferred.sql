@@ -1,5 +1,5 @@
 -- =============================================================================
--- MIGRAÇÃO: Estoque P2P diferido — dedução somente após aceite da parceira
+-- MIGRAÇÃO: Estoque P2P diferido - dedução somente após aceite da parceira
 -- =============================================================================
 -- Regras de negócio:
 -- 1. Quando um item P2P é vendido, o estoque NÃO deve ser deduzido imediatamente.

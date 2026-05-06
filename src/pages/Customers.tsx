@@ -130,7 +130,11 @@ export default function Customers() {
       if (!user) throw new Error('Não autenticado');
       
       const { id, ...rest } = payloadData;
-      const payload = { ...rest, owner_id: user.id };
+      const payload: any = { ...rest, owner_id: user.id };
+      
+      if (payload.birth_date === '') {
+        payload.birth_date = null;
+      }
       
       if (id) {
         const { error } = await supabase.from('customers').update(payload).eq('id', id);

@@ -600,7 +600,8 @@ export default function POS() {
                     sale_id: sale.id,
                     quantity: p2pItem.quantity,
                     sale_price: p2pItem.price,
-                    status: isMyOwnProduct ? 'confirmed' : 'pending_confirmation'
+                    status: isMyOwnProduct ? 'confirmed' : 'pending_confirmation',
+                    order_type: 'sale'
                  }).select('id').single();
 
                  if (!pOrderErr && pOrder) {

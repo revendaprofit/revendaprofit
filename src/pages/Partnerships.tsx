@@ -6,6 +6,7 @@ import { Handshake, AlertCircle, CheckCircle, XCircle, Trash2 } from 'lucide-rea
 import PartnershipWizardDialog from '@/components/partnerships/PartnershipWizardDialog';
 import PartnershipCatalogSheet from '@/components/partnerships/PartnershipCatalogSheet';
 import PartnershipSettlementsSheet from '@/components/partnerships/PartnershipSettlementsSheet';
+import PartnershipLoanRequestSheet from '@/components/partnerships/PartnershipLoanRequestSheet';
 import PartnershipOrdersSheet from '@/components/partnerships/PartnershipOrdersSheet';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -126,6 +127,7 @@ export default function Partnerships() {
                         {!isPendingReceiver && p.status === 'active' && (
                           <div className="flex flex-wrap items-center gap-2">
                              <PartnershipOrdersSheet partnershipId={p.id} partnerEmail={otherEmail || ''} />
+                             <PartnershipLoanRequestSheet partnershipId={p.id} partnerEmail={otherEmail || ''} />
                              <PartnershipSettlementsSheet partnershipId={p.id} partnerEmail={otherEmail || ''} />
                              <PartnershipCatalogSheet partnershipId={p.id} partnerEmail={otherEmail || ''} />
                           </div>
