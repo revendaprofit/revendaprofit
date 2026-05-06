@@ -90,6 +90,7 @@ export default function StockControl() {
              _p2p_owner_id: p.p2p_owner_id,
              _p2p_price: p.sale_price,
              total_stock: (p.variants || []).reduce((acc: number, v: any) => acc + (v.stock || 0), 0),
+             product_variants: (p.variants || []),
              categories: { name: p.category_name || 'Compartilhado' }
           }));
           
@@ -98,7 +99,7 @@ export default function StockControl() {
           return result;
       }
 
-      let query = supabase.from('products').select(`*, categories(name), suppliers(name)`).eq('owner_id', userLocal?.id).order('created_at', { ascending: false });
+      let query = supabase.from('products').select(`*, categories(name), suppliers(name), product_variants(id, size, color, stock)`).eq('owner_id', userLocal?.id).order('created_at', { ascending: false });
       
       if (activeTab === 'archived') {
         query = query.eq('marketing_status', 'archived');
@@ -413,10 +414,22 @@ export default function StockControl() {
                     <TableCell className="text-muted-foreground text-xs px-2 py-2">{(p as any).categories?.name || '---'}</TableCell>
                     <TableCell className="text-muted-foreground text-xs px-2 py-2">{(p as any).suppliers?.name || '---'}</TableCell>
                     <TableCell className="font-semibold whitespace-nowrap px-2 py-2 text-xs sm:text-sm">R$ {Number(isP2p ? p._p2p_price : p.sale_price).toFixed(2)}</TableCell>
-                    <TableCell className="text-center font-medium px-2 py-2">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold whitespace-nowrap ${p.total_stock > 0 ? (isP2p ? 'bg-fuchsia-100 text-fuchsia-800' : 'bg-emerald-100 text-emerald-800') : 'bg-red-100 text-red-800'}`}>
-                        {p.total_stock > 0 ? `${p.total_stock} un` : 'Esgotado'}
-                      </span>
+                    <TableCell className="px-2 py-2">
+                      {(() => {
+                        const variants = (p.product_variants || []).filter((v: any) => v.stock > 0);
+                        if (variants.length === 0) {
+                          return <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold whitespace-nowrap bg-red-100 text-red-800">Esgotado</span>;
+                        }
+                        return (
+                          <div className="flex flex-wrap gap-1 justify-center">
+                            {variants.map((v: any) => (
+                              <span key={v.id} className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold whitespace-nowrap ${isP2p ? 'bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                                {v.size}{v.color ? `/${v.color}` : ''}<span className="opacity-60 ml-0.5">({v.stock})</span>
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="text-right px-2 py-2">
                       {!isP2p ? (
