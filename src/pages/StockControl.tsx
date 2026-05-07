@@ -424,7 +424,7 @@ export default function StockControl() {
                           <div className="flex flex-wrap gap-1 justify-center">
                             {variants.map((v: any) => (
                               <span key={v.id} className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold whitespace-nowrap ${isP2p ? 'bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
-                                {v.size}{v.color ? `/${v.color}` : ''}<span className="opacity-60 ml-0.5">({v.stock})</span>
+                                {v.size || 'Un'}<span className="opacity-60 ml-0.5">({v.stock})</span>
                               </span>
                             ))}
                           </div>
