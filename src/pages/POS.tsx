@@ -816,7 +816,7 @@ export default function POS() {
                                  {av.length > 0 ? av.map(v => (
                                     <Button key={v.id} variant="outline" size="sm" className={`h-7 text-xs px-2 ${(v as any)._is_p2p ? 'border-blue-300 bg-blue-50/50 hover:border-blue-500 hover:bg-blue-100/50 text-blue-700' : 'border-primary/30 hover:border-primary hover:bg-primary/5'}`} onClick={() => {addToCart(p,v); setSearch('');}}>
                                        {(v as any)._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
-                                       {v.size} {v.color && `- ${v.color}`}
+                                       {v.size}
                                        {(v as any)._is_p2p && <span className="ml-1 text-[9px] text-blue-400">{(v as any)._p2p_original_owner_id === (v as any)._p2p_creditor_id ? '(Parceira)' : '(Meu)'}</span>}
                                        <span className="ml-1 text-[9px] opacity-50">({v.stock})</span>
                                     </Button>
