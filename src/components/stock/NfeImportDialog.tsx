@@ -16,8 +16,26 @@ const KNOWN_SIZES = new Set([
 ]);
 
 function extractSizeFromName(name: string): { productName: string; size: string | null } {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length < 2) return { productName: name, size: null };
+  const trimmed = name.trim();
+
+  // 1. Try separator patterns first: " - P", " / M", " – G"
+  const sepMatch = trimmed.match(/^(.+?)\s*[\-\/–—]\s*(\S+)\s*$/);
+  if (sepMatch) {
+    const candidate = sepMatch[2]
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    if (KNOWN_SIZES.has(candidate)) {
+      return {
+        productName: sepMatch[1].trim(),
+        size: candidate,
+      };
+    }
+  }
+
+  // 2. Fall back to last word: "Top Flor Canelado P"
+  const parts = trimmed.split(/\s+/);
+  if (parts.length < 2) return { productName: trimmed, size: null };
 
   const lastPart = parts[parts.length - 1]
     .toUpperCase()
@@ -30,7 +48,7 @@ function extractSizeFromName(name: string): { productName: string; size: string 
       size: lastPart,
     };
   }
-  return { productName: name, size: null };
+  return { productName: trimmed, size: null };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -122,61 +140,106 @@ export default function NfeImportDialog() {
         setAllExistingProducts(allProdsForReview);
         setStatus('Analisando produtos e tamanhos...');
 
-        // Group NFe products by XML name
-        const nfeGrouped: Record<string, { name: string; cost: number; quantity: number; sku: string }[]> = {};
+        // ── SMART GROUPING: consolidate XML lines by base product name ──
+        // Parse every <prod> line from the XML
+        const parsedLines: { xmlName: string; baseName: string; size: string; cost: number; qty: number; sku: string }[] = [];
         prods.forEach(prod => {
-          const name = prod.getElementsByTagName('xProd')[0]?.textContent || 'Produto Desconhecido';
+          const xmlName = prod.getElementsByTagName('xProd')[0]?.textContent || 'Produto Desconhecido';
           const cost = parseFloat(prod.getElementsByTagName('vUnCom')[0]?.textContent || '0');
-          const qty = parseFloat(prod.getElementsByTagName('qCom')[0]?.textContent || '1');
+          const qty = Math.round(parseFloat(prod.getElementsByTagName('qCom')[0]?.textContent || '1'));
           const sku = prod.getElementsByTagName('cProd')[0]?.textContent || '';
-          if (!nfeGrouped[name]) nfeGrouped[name] = [];
-          nfeGrouped[name].push({ name, cost, quantity: Math.round(qty), sku });
+          const { productName, size } = extractSizeFromName(xmlName);
+          parsedLines.push({
+            xmlName,
+            baseName: productName,
+            size: size || 'Único',
+            cost,
+            qty,
+            sku,
+          });
+        });
+
+        // Group by normalized base name so "Top Flor - P" and "Top Flor - M" become one group
+        const groupKey = (baseName: string) => normalizeForComparison(baseName);
+        const groupMap = new Map<string, typeof parsedLines>();
+        parsedLines.forEach(line => {
+          const key = groupKey(line.baseName);
+          if (!groupMap.has(key)) groupMap.set(key, []);
+          groupMap.get(key)!.push(line);
         });
 
         const items: ImportReviewItem[] = [];
 
-        for (const [name, entries] of Object.entries(nfeGrouped)) {
-          const firstEntry = entries[0];
-          const totalQty = entries.reduce((sum, e) => sum + e.quantity, 0);
-          const avgCost = entries.reduce((sum, e) => sum + e.cost, 0) / entries.length;
+        for (const [, groupLines] of groupMap) {
+          const firstLine = groupLines[0];
+          const baseName = firstLine.baseName;
+          const hasSizeVariants = groupLines.some(l => l.size !== 'Único');
 
-          // Extract size from name
-          const { productName: detectedProductName, size: detectedSize } = extractSizeFromName(name);
+          // Build consolidated variants – merge duplicate sizes within the group
+          const variantMap = new Map<string, { size: string; color: string; stock: number; sku: string | null }>();
+          groupLines.forEach(line => {
+            const sizeKey = normalizeForComparison(line.size);
+            if (variantMap.has(sizeKey)) {
+              const existing = variantMap.get(sizeKey)!;
+              existing.stock += line.qty;
+            } else {
+              variantMap.set(sizeKey, {
+                size: line.size,
+                color: 'Padrão',
+                stock: line.qty,
+                sku: line.sku || null,
+              });
+            }
+          });
+          const fileVariants = Array.from(variantMap.values());
+          const totalQty = fileVariants.reduce((s, v) => s + v.stock, 0);
+          const avgCost = groupLines.reduce((s, l) => s + l.cost, 0) / groupLines.length;
 
-          const normalizedExact = normalizeForComparison(name);
-          const normalizedDetected = normalizeForComparison(detectedProductName);
+          // Build composite fileName for display (original XML names)
+          const fileNameDisplay = groupLines.length === 1
+            ? firstLine.xmlName
+            : groupLines.map(l => l.xmlName).join(' | ');
 
-          // Determine match source
-          let existingEntry = exactMap.get(normalizedExact);
+          // ── Match against existing products ──
+          const normalizedBase = normalizeForComparison(baseName);
+          let existingEntry = exactMap.get(normalizedBase);
           let matchSource: ImportReviewItem['matchSource'] = 'none';
 
           if (existingEntry) {
             matchSource = 'exact';
-          } else if (firstEntry.sku && skuMap.get(normalizeForComparison(firstEntry.sku))) {
-            existingEntry = skuMap.get(normalizeForComparison(firstEntry.sku));
-            matchSource = 'sku';
-          } else if (detectedSize) {
-            // Try smart match: detected name vs exact map
-            existingEntry = exactMap.get(normalizedDetected);
-            if (!existingEntry) existingEntry = smartMap.get(normalizedDetected);
+          } else {
+            // Try exact match against any of the original XML names
+            for (const line of groupLines) {
+              const exactHit = exactMap.get(normalizeForComparison(line.xmlName));
+              if (exactHit) { existingEntry = exactHit; matchSource = 'exact'; break; }
+            }
+          }
+
+          if (!existingEntry) {
+            // Try SKU match
+            for (const line of groupLines) {
+              if (line.sku) {
+                const skuHit = skuMap.get(normalizeForComparison(line.sku));
+                if (skuHit) { existingEntry = skuHit; matchSource = 'sku'; break; }
+              }
+            }
+          }
+
+          if (!existingEntry && hasSizeVariants) {
+            // Smart match: base name vs existing product names
+            existingEntry = exactMap.get(normalizedBase);
+            if (!existingEntry) existingEntry = smartMap.get(normalizedBase);
             if (existingEntry) matchSource = 'smart';
           }
 
-          const variantSize = detectedSize || 'Único';
-
           items.push({
-            fileName: name,
-            detectedProductName,
-            detectedSize,
+            fileName: fileNameDisplay,
+            detectedProductName: baseName,
+            detectedSize: hasSizeVariants ? groupLines.map(l => l.size).join(', ') : null,
             matchSource,
             fileCostPrice: avgCost,
-            fileSalePrice: avgCost * 2,
-            fileVariants: [{
-              size: variantSize,
-              color: 'Padrão',
-              stock: totalQty,
-              sku: firstEntry.sku || null,
-            }],
+            fileSalePrice: null,
+            fileVariants,
             fileTotalStock: totalQty,
             existingMatch: existingEntry ? {
               id: existingEntry.product.id,
@@ -238,7 +301,6 @@ export default function NfeImportDialog() {
             owner_id: user.id,
             name: productName,
             cost_price: item.fileCostPrice,
-            sale_price: item.fileSalePrice,
             marketing_status: 'active',
           });
           if (pErr) throw pErr;

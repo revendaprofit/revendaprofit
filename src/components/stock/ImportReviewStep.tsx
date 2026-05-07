@@ -28,7 +28,7 @@ export type ImportReviewItem = {
   detectedSize: string | null; // extracted size
   matchSource: 'exact' | 'smart' | 'sku' | 'none';
   fileCostPrice: number;
-  fileSalePrice: number;
+  fileSalePrice: number | null;
   fileVariants: ImportVariant[];
   fileTotalStock: number;
   existingMatch: ExistingMatch | null;
@@ -132,21 +132,27 @@ export default function ImportReviewStep({ items, onItemsChange, onConfirm, onBa
 
               return (
                 <div key={idx} className={`p-3 space-y-2 ${rejected ? 'opacity-60 bg-slate-50' : ''}`}>
-                  {/* Row: XML name → detected */}
+                  {/* Row: detected name + variant badges */}
                   <div className="flex items-start gap-2 flex-wrap">
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-0.5">XML Original</p>
-                      <p className="text-xs font-semibold text-slate-700 truncate" title={item.fileName}>{item.fileName}</p>
-                    </div>
-                    <div className="text-slate-300 pt-4">→</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-0.5">Nome Detectado</p>
+                      <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-0.5">Produto Detectado</p>
                       <p className="text-xs font-semibold text-purple-700 truncate">{item.detectedProductName}</p>
+                      {item.fileVariants.length > 1 && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5 truncate" title={item.fileName}>
+                          Agrupado de {item.fileVariants.length} linhas XML
+                        </p>
+                      )}
                     </div>
-                    {item.detectedSize && (
+                    {item.fileVariants.length > 0 && item.detectedSize && (
                       <div className="flex-shrink-0">
-                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-0.5">Tamanho</p>
-                        <span className="inline-block bg-purple-100 text-purple-800 text-xs font-bold px-2.5 py-1 rounded-full">{item.detectedSize}</span>
+                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-1">Variantes</p>
+                        <div className="flex flex-wrap gap-1">
+                          {item.fileVariants.map((v, vIdx) => (
+                            <span key={vIdx} className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                              {v.size} <span className="text-purple-500 font-normal">×{v.stock}</span>
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -295,9 +301,17 @@ export default function ImportReviewStep({ items, onItemsChange, onConfirm, onBa
           <div className="border rounded-lg bg-emerald-50/30 p-3 max-h-[120px] overflow-y-auto">
             <div className="flex flex-wrap gap-1.5">
               {[...newItems, ...smartItems.filter(i => i.action === 'new')].map((item, idx) => (
-                <span key={idx} className="bg-white border border-emerald-200 text-emerald-800 text-[10px] px-2 py-1 rounded-md font-medium shadow-sm">
+                <span key={idx} className="bg-white border border-emerald-200 text-emerald-800 text-[10px] px-2 py-1 rounded-md font-medium shadow-sm inline-flex items-center gap-1 flex-wrap">
                   {item.detectedProductName || item.fileName}
-                  {item.detectedSize && <span className="ml-1 font-bold text-purple-600">({item.detectedSize})</span>}
+                  {item.fileVariants.length > 1 ? (
+                    item.fileVariants.map((v, vIdx) => (
+                      <span key={vIdx} className="ml-0.5 font-bold text-purple-600">
+                        {v.size}×{v.stock}
+                      </span>
+                    ))
+                  ) : item.detectedSize ? (
+                    <span className="ml-1 font-bold text-purple-600">({item.detectedSize})</span>
+                  ) : null}
                 </span>
               ))}
             </div>
