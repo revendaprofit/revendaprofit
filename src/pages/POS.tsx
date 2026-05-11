@@ -583,6 +583,9 @@ export default function POS() {
               const pIds = [...new Set(groupP2PItems.map(c => c._p2p_partnership_id).filter(Boolean))];
               const { data: activePartnerships } = await supabase.from('partnerships').select('*').in('id', pIds as string[]);
 
+              const totalP2PRevenue = groupP2PItems.reduce((acc, c) => acc + c.price * c.quantity, 0);
+              const totalFees = fee1 + fee2;
+
               for (const p2pItem of groupP2PItems) {
                  const contract = activePartnerships?.find(p => p.id === p2pItem._p2p_partnership_id);
                  if (!contract) continue;
@@ -607,21 +610,36 @@ export default function POS() {
                  if (!pOrderErr && pOrder) {
                     const customCostPerc = parseFloat(contract.cost_recovery_owner_percent) / 100;
                     let costSliceCreditor = 0;
-                    
+
                     if (contract.cost_recovery_type === 'owner_100') {
                         costSliceCreditor = isMyOwnProduct ? 0 : p2pItem.cost_price;
                     } else if (contract.cost_recovery_type === 'shared_50_50') {
                         costSliceCreditor = p2pItem.cost_price * 0.5;
                     } else if (contract.cost_recovery_type === 'custom') {
-                        costSliceCreditor = isMyOwnProduct 
-                            ? p2pItem.cost_price * (1 - customCostPerc) 
+                        costSliceCreditor = isMyOwnProduct
+                            ? p2pItem.cost_price * (1 - customCostPerc)
                             : p2pItem.cost_price * customCostPerc;
                     }
-                    
+
                     const lucro = Math.max(0, p2pItem.price - p2pItem.cost_price);
                     const profitSliceCreditor = lucro * (parseFloat(contract.profit_split_partner_percent) / 100);
-                    const totalOwedToCreditor = (costSliceCreditor + profitSliceCreditor) * p2pItem.quantity;
-                    
+
+                    // Fatia de taxa que a credora absorve (proporcional à receita do item)
+                    const itemRevenue = p2pItem.price * p2pItem.quantity;
+                    const itemFeeRatio = totalP2PRevenue > 0 ? itemRevenue / totalP2PRevenue : 1;
+                    const itemFees = totalFees * itemFeeRatio;
+                    let feeSliceCreditor = 0;
+                    if (contract.fee_responsibility_type === 'shared_50_50') {
+                        feeSliceCreditor = itemFees * 0.5;
+                    } else if (contract.fee_responsibility_type === 'custom') {
+                        const sellerPercent = Number(contract.fee_responsibility_seller_percent) / 100;
+                        feeSliceCreditor = itemFees * (1 - sellerPercent);
+                    }
+                    // seller_100: feeSliceCreditor = 0 (padrão)
+
+                    const grossOwed = (costSliceCreditor + profitSliceCreditor) * p2pItem.quantity;
+                    const totalOwedToCreditor = Math.max(0, grossOwed - feeSliceCreditor);
+
                     await supabase.from('partnership_settlements').insert({
                        partnership_id: contract.id,
                        partnership_order_id: pOrder.id,
@@ -629,6 +647,7 @@ export default function POS() {
                        creditor_id: creditorId,
                        cost_slice: costSliceCreditor * p2pItem.quantity,
                        profit_slice: profitSliceCreditor * p2pItem.quantity,
+                       fee_slice: feeSliceCreditor,
                        amount_owed: totalOwedToCreditor,
                        status: 'open'
                     });

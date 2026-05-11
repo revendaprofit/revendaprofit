@@ -76,7 +76,7 @@ export default function SalesHistory() {
           partner_points ( name, commission_arara ),
           sale_installments ( status, amount, payment_method_id ),
           sale_items ( product_id, unit_cost, quantity, products ( name, cost_price ) ),
-          partnership_orders ( product_id, partnership_settlements ( amount_owed, cost_slice, profit_slice ) )
+          partnership_orders ( product_id, partnership_settlements ( amount_owed, cost_slice, profit_slice, fee_slice ) )
         `)
         .order('created_at', { ascending: false });
       
@@ -571,20 +571,24 @@ export default function SalesHistory() {
                   const grossProfit = grossRevenue - pureCost;
 
                   let totalRepasse = 0;
+                  let totalFeeSlices = 0;
                   const repasseDetails: any[] = [];
 
                   saleItems.forEach(item => {
                      const pOrder = pOrders.find((po: any) => po.product_id === item.product_id);
                      const pSetRaw = pOrder?.partnership_settlements;
                      const pSettlement = Array.isArray(pSetRaw) ? pSetRaw[0] : pSetRaw;
-                     
+
                      if (pSettlement && pSettlement.amount_owed) {
                          const cstSlice = Number(pSettlement.cost_slice || 0);
                          const prfSlice = Number(pSettlement.profit_slice || 0);
+                         const feeSlice = Number(pSettlement.fee_slice || 0);
                          totalRepasse += Number(pSettlement.amount_owed);
+                         totalFeeSlices += feeSlice;
                          repasseDetails.push(
                             <div key={item.id} className="text-red-500 text-xs pl-4 border-l border-red-200 ml-1 mt-1">
                                {item.products?.name}: R$ {prfSlice.toFixed(2)} (LUCRO) + R$ {cstSlice.toFixed(2)} (REEMB. CUSTO)
+                               {feeSlice > 0 && ` - R$ ${feeSlice.toFixed(2)} (TAXA DIVIDIDA)`}
                             </div>
                          );
                      }
@@ -592,9 +596,10 @@ export default function SalesHistory() {
 
                   const fees = Number(selectedSale.payment_fee_amount || 0) + Number(selectedSale.payment_fee_amount_2 || 0);
                   const storeShippingCost = selectedSale.shipping_payer === 'seller' ? Number(selectedSale.shipping_cost || 0) : 0;
-                  const feesAndShipping = fees + storeShippingCost;
-                  
-                  // Lucro Líquido = Lucro Bruto - (Apenas o Repasse de Lucro, pois o repasse de custo já saiu do Lucro Bruto ao abater pureCost) - Taxas
+                  // Taxas que a vendedora efetivamente paga (descontada a fatia absorvida pela sócia)
+                  const myFeeBurden = fees - totalFeeSlices;
+
+                  // Lucro Líquido = Lucro Bruto - Repasse de Lucro - Taxas da Loja - Frete da Loja
                   const totalProfitRepasse = saleItems.reduce((acc, item) => {
                      const pOrder = pOrders.find((po: any) => po.product_id === item.product_id);
                      const pSetRaw = pOrder?.partnership_settlements;
@@ -602,7 +607,7 @@ export default function SalesHistory() {
                      return acc + (pSettlement?.amount_owed ? Number(pSettlement.profit_slice || 0) : 0);
                   }, 0);
 
-                  const netProfit = grossProfit - totalProfitRepasse - feesAndShipping;
+                  const netProfit = grossProfit - totalProfitRepasse - myFeeBurden - storeShippingCost;
 
                   return (
                     <>
@@ -635,10 +640,17 @@ export default function SalesHistory() {
                         </div>
                       )}
 
-                      {feesAndShipping > 0 && (
+                      {myFeeBurden > 0 && (
                         <div className="flex justify-between text-red-600 mt-2">
-                          <span>Taxas/Frete (Sua Loja):</span>
-                          <span>- R$ {feesAndShipping.toFixed(2)}</span>
+                          <span>Taxas de Pagamento (Sua Loja):</span>
+                          <span>- R$ {myFeeBurden.toFixed(2)}</span>
+                        </div>
+                      )}
+
+                      {storeShippingCost > 0 && (
+                        <div className="flex justify-between text-red-600 mt-2">
+                          <span>Frete (Sua Loja):</span>
+                          <span>- R$ {storeShippingCost.toFixed(2)}</span>
                         </div>
                       )}
                       

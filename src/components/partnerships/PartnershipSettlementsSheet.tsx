@@ -150,7 +150,8 @@ export default function PartnershipSettlementsSheet({ partnershipId, partnerEmai
                                  {isMyDebt ? '-' : '+'} R$ {Number(s.amount_owed).toFixed(2)}
                                </p>
                                <p className="text-[10px] text-slate-500">
-                                 (Custo: R$ {Number(s.cost_slice).toFixed(2)} / Lucro sócia: R$ {Number(s.profit_slice).toFixed(2)})
+                                 (Custo: R$ {Number(s.cost_slice).toFixed(2)} / Lucro sócia: R$ {Number(s.profit_slice).toFixed(2)}
+                                 {Number(s.fee_slice) > 0 && ` / Taxa dividida: -R$ ${Number(s.fee_slice).toFixed(2)}`})
                                </p>
                             </div>
                          </div>

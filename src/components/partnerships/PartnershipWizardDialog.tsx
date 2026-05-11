@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Search, UserPlus, FileText, Activity, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Search, UserPlus, FileText, Activity, ArrowRight, ArrowLeft, CheckCircle2, Receipt } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -18,9 +18,12 @@ export default function PartnershipWizardDialog() {
   // Form State
   const [searchEmail, setSearchEmail] = useState('');
   const [partnerDetails, setPartnerDetails] = useState<any>(null);
-  
+
   const [costRecoveryType, setCostRecoveryType] = useState('owner_100'); // owner_100, shared_50_50, seller_100, custom
-  const [customCostPercent, setCustomCostPercent] = useState(100);
+  const customCostPercent = 100;
+
+  const [feeResponsibilityType, setFeeResponsibilityType] = useState('seller_100'); // seller_100, shared_50_50, custom
+  const [customFeeSellerPercent, setCustomFeeSellerPercent] = useState(50);
 
   const [sellerProfitPercent, setSellerProfitPercent] = useState(85);
   const [passiveProfitPercent, setPassiveProfitPercent] = useState(15);
@@ -53,6 +56,10 @@ export default function PartnershipWizardDialog() {
     }
   };
 
+  const feeSellerPercent = feeResponsibilityType === 'custom'
+    ? customFeeSellerPercent
+    : feeResponsibilityType === 'shared_50_50' ? 50 : 100;
+
   const submitPartnership = async () => {
     if (!partnerDetails || !user) return;
     setLoading(true);
@@ -64,17 +71,17 @@ export default function PartnershipWizardDialog() {
         cost_recovery_type: costRecoveryType,
         cost_recovery_owner_percent: costRecoveryType === 'custom' ? customCostPercent : (costRecoveryType === 'shared_50_50' ? 50 : (costRecoveryType === 'seller_100' ? 0 : 100)),
         profit_split_seller_percent: sellerProfitPercent,
-        profit_split_partner_percent: passiveProfitPercent
+        profit_split_partner_percent: passiveProfitPercent,
+        fee_responsibility_type: feeResponsibilityType,
+        fee_responsibility_seller_percent: feeSellerPercent,
       };
 
       const { error } = await supabase.from('partnerships').insert(payload);
       if (error) throw error;
-      
+
       toast.success('Convite de parceria enviado com sucesso!');
       queryClient.invalidateQueries({ queryKey: ['partnerships'] });
       setOpen(false);
-      
-      // Reset
       reset();
     } catch (err: any) {
       toast.error(err.message);
@@ -88,8 +95,16 @@ export default function PartnershipWizardDialog() {
     setSearchEmail('');
     setPartnerDetails(null);
     setCostRecoveryType('owner_100');
+    setFeeResponsibilityType('seller_100');
+    setCustomFeeSellerPercent(50);
     setSellerProfitPercent(85);
     setPassiveProfitPercent(15);
+  };
+
+  const feeLabel = (type: string) => {
+    if (type === 'seller_100') return 'Quem vendeu paga 100% das taxas';
+    if (type === 'shared_50_50') return 'Taxas divididas 50% / 50%';
+    return `Vendedora paga ${customFeeSellerPercent}% / Sócia paga ${100 - customFeeSellerPercent}%`;
   };
 
   return (
@@ -108,12 +123,13 @@ export default function PartnershipWizardDialog() {
         </DialogHeader>
 
         <div className="py-2">
-          {/* Progress Bar */}
+          {/* Progress Bar — 5 steps */}
           <div className="flex gap-2 mb-6">
             <div className={`h-1.5 flex-1 rounded-full ${step >= 1 ? 'bg-fuchsia-600' : 'bg-slate-200'}`} />
             <div className={`h-1.5 flex-1 rounded-full ${step >= 2 ? 'bg-fuchsia-600' : 'bg-slate-200'}`} />
             <div className={`h-1.5 flex-1 rounded-full ${step >= 3 ? 'bg-fuchsia-600' : 'bg-slate-200'}`} />
             <div className={`h-1.5 flex-1 rounded-full ${step >= 4 ? 'bg-fuchsia-600' : 'bg-slate-200'}`} />
+            <div className={`h-1.5 flex-1 rounded-full ${step >= 5 ? 'bg-fuchsia-600' : 'bg-slate-200'}`} />
           </div>
 
           {/* STEP 1: Find Partner */}
@@ -123,12 +139,12 @@ export default function PartnershipWizardDialog() {
                 <h3 className="font-bold text-lg mb-1 flex items-center gap-2"><UserPlus className="h-5 w-5 text-fuchsia-600"/> 1. Encontrar Parceira</h3>
                 <p className="text-sm text-muted-foreground">O convite só pode ser enviado para usuárias ativas na plataforma.</p>
               </div>
-              
+
               <div className="flex gap-2">
-                <Input 
-                  placeholder="E-mail de Cadastro da parceira..." 
-                  type="email" 
-                  value={searchEmail} 
+                <Input
+                  placeholder="E-mail de Cadastro da parceira..."
+                  type="email"
+                  value={searchEmail}
                   onChange={e => setSearchEmail(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSearch()}
                 />
@@ -188,16 +204,79 @@ export default function PartnershipWizardDialog() {
 
               <div className="flex gap-2 pt-4">
                 <Button variant="outline" className="flex-1" onClick={() => setStep(1)}><ArrowLeft className="mr-2 h-4 w-4"/> Voltar</Button>
-                <Button className="flex-1" onClick={() => setStep(3)}>Avançar Regras <ArrowRight className="ml-2 h-4 w-4"/></Button>
+                <Button className="flex-1" onClick={() => setStep(3)}>Próximo <ArrowRight className="ml-2 h-4 w-4"/></Button>
               </div>
             </div>
           )}
 
-          {/* STEP 3: Profit Split */}
+          {/* STEP 3: Fee Responsibility */}
           {step === 3 && (
             <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
               <div>
-                <h3 className="font-bold text-lg mb-1 flex items-center gap-2"><Activity className="h-5 w-5 text-emerald-600"/> 3. Grupo B: Fatiamento de Lucros</h3>
+                <h3 className="font-bold text-lg mb-1 flex items-center gap-2"><Receipt className="h-5 w-5 text-rose-600"/> 3. Grupo B: Taxas de Pagamento</h3>
+                <p className="text-sm text-muted-foreground leading-snug">Quando uma peça for vendida no cartão ou com taxa, quem absorve o custo da maquininha/gateway? O frete não entra nessa divisão.</p>
+              </div>
+
+              <div className="space-y-3 mt-4">
+                <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${feeResponsibilityType === 'seller_100' ? 'bg-rose-50 border-rose-200 ring-1 ring-rose-200' : 'hover:bg-slate-50'}`}>
+                  <input type="radio" name="fee" className="mt-1 accent-rose-600" checked={feeResponsibilityType === 'seller_100'} onChange={() => setFeeResponsibilityType('seller_100')} />
+                  <div>
+                    <p className="font-semibold text-sm">Quem vendeu paga 100% das taxas</p>
+                    <p className="text-xs text-muted-foreground">Padrão: A vendedora que passou o cartão absorve a taxa inteira. A sócia recebe o repasse cheio.</p>
+                  </div>
+                </label>
+
+                <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${feeResponsibilityType === 'shared_50_50' ? 'bg-rose-50 border-rose-200 ring-1 ring-rose-200' : 'hover:bg-slate-50'}`}>
+                  <input type="radio" name="fee" className="mt-1 accent-rose-600" checked={feeResponsibilityType === 'shared_50_50'} onChange={() => setFeeResponsibilityType('shared_50_50')} />
+                  <div>
+                    <p className="font-semibold text-sm">Taxas divididas 50% / 50%</p>
+                    <p className="text-xs text-muted-foreground">Cada uma absorve metade da taxa. A sócia recebe o repasse com desconto de 50% da taxa proporcional à peça.</p>
+                  </div>
+                </label>
+
+                <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${feeResponsibilityType === 'custom' ? 'bg-rose-50 border-rose-200 ring-1 ring-rose-200' : 'hover:bg-slate-50'}`}>
+                  <input type="radio" name="fee" className="mt-1 accent-rose-600" checked={feeResponsibilityType === 'custom'} onChange={() => setFeeResponsibilityType('custom')} />
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm">Divisão personalizada</p>
+                    <p className="text-xs text-muted-foreground mb-2">Defina exatamente o percentual que cada uma paga.</p>
+                    {feeResponsibilityType === 'custom' && (
+                      <div className="flex items-center gap-3 mt-2">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-slate-500 w-20">Vendedora:</span>
+                          <Input
+                            type="number" min="0" max="100"
+                            className="w-20 h-7 text-center text-sm border-rose-300"
+                            value={customFeeSellerPercent}
+                            onChange={e => {
+                              const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                              setCustomFeeSellerPercent(v);
+                            }}
+                          />
+                          <span className="text-xs font-bold text-rose-600">%</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-slate-500 w-14">Sócia:</span>
+                          <span className="text-sm font-bold text-orange-600 w-8 text-center">{100 - customFeeSellerPercent}</span>
+                          <span className="text-xs font-bold text-orange-600">%</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button variant="outline" className="flex-1" onClick={() => setStep(2)}><ArrowLeft className="mr-2 h-4 w-4"/> Voltar</Button>
+                <Button className="flex-1" onClick={() => setStep(4)}>Próximo <ArrowRight className="ml-2 h-4 w-4"/></Button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: Profit Split */}
+          {step === 4 && (
+            <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
+              <div>
+                <h3 className="font-bold text-lg mb-1 flex items-center gap-2"><Activity className="h-5 w-5 text-emerald-600"/> 4. Grupo C: Fatiamento de Lucros</h3>
                 <p className="text-sm text-muted-foreground leading-snug">Pegando apenas o valor que sobrou livre da venda (Lucro Bruto = Venda - Custo), qual será a taxa percentual de comissões da sociedade?</p>
               </div>
 
@@ -224,19 +303,19 @@ export default function PartnershipWizardDialog() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex gap-2 pt-4">
-                <Button variant="outline" className="flex-1" onClick={() => setStep(2)}><ArrowLeft className="mr-2 h-4 w-4"/> Voltar</Button>
-                <Button className="flex-1" onClick={() => setStep(4)}>Revisar Acordo <ArrowRight className="ml-2 h-4 w-4"/></Button>
+                <Button variant="outline" className="flex-1" onClick={() => setStep(3)}><ArrowLeft className="mr-2 h-4 w-4"/> Voltar</Button>
+                <Button className="flex-1" onClick={() => setStep(5)}>Revisar Acordo <ArrowRight className="ml-2 h-4 w-4"/></Button>
               </div>
             </div>
           )}
 
-          {/* STEP 4: Revision */}
-          {step === 4 && (
+          {/* STEP 5: Revision */}
+          {step === 5 && (
             <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
                <div>
-                <h3 className="font-bold text-lg mb-1 flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-fuchsia-600"/> 4. Confirmar e Enviar Contrato</h3>
+                <h3 className="font-bold text-lg mb-1 flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-fuchsia-600"/> 5. Confirmar e Enviar Contrato</h3>
                 <p className="text-sm text-muted-foreground">O convite ficará pendente. Sua parceira precisará aceitá-lo na tela dela para iniciar o espelhamento de estoque.</p>
               </div>
 
@@ -253,6 +332,10 @@ export default function PartnershipWizardDialog() {
                     {costRecoveryType === 'seller_100' && 'Vendedora absorve 100%'}
                   </span>
                 </div>
+                <div className="flex justify-between border-b border-fuchsia-200/50 pb-2">
+                  <span className="text-muted-foreground">Taxas de Pagamento:</span>
+                  <span className="font-bold text-rose-700">{feeLabel(feeResponsibilityType)}</span>
+                </div>
                 <div className="flex justify-between pb-1">
                   <span className="text-muted-foreground">Lucro Ativa (Vendedora):</span>
                   <span className="font-bold text-emerald-600">{sellerProfitPercent}%</span>
@@ -264,7 +347,7 @@ export default function PartnershipWizardDialog() {
               </div>
 
               <div className="flex gap-2 pt-4">
-                <Button variant="outline" className="flex-1" onClick={() => setStep(3)} disabled={loading}><ArrowLeft className="mr-2 h-4 w-4"/> Voltar</Button>
+                <Button variant="outline" className="flex-1" onClick={() => setStep(4)} disabled={loading}><ArrowLeft className="mr-2 h-4 w-4"/> Voltar</Button>
                 <Button className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-700 font-bold" onClick={submitPartnership} disabled={loading}>
                   {loading ? 'Processando Contrato...' : 'Enviar Convite Formal'}
                 </Button>
