@@ -87,6 +87,7 @@ export default function PartnershipSettlementsSheet({ partnershipId, partnerEmai
         .from('sales')
         .select(`
           *,
+          customers ( name ),
           partner_points ( name, commission_arara ),
           sale_items ( id, product_id, unit_cost, unit_price, quantity, total_price, products ( name, cost_price ) ),
           partnership_orders ( product_id, partnership_settlements ( amount_owed, cost_slice, profit_slice, fee_slice ) )
@@ -383,7 +384,9 @@ export default function PartnershipSettlementsSheet({ partnershipId, partnerEmai
       <Dialog open={!!selectedSaleId} onOpenChange={(v) => { if (!v) setSelectedSaleId(null); }}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Balanço da Venda</DialogTitle>
+            <DialogTitle>
+              Balanço da Venda{receiptSale?.customers?.name ? ` • ${receiptSale.customers.name}` : ''}
+            </DialogTitle>
           </DialogHeader>
           {receiptLoading ? (
             <p className="text-center py-8 text-muted-foreground text-sm">Carregando...</p>
