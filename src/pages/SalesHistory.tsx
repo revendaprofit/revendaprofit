@@ -219,17 +219,14 @@ export default function SalesHistory() {
   };
 
   const getStatusBadge = (status: string) => {
-    if (status === 'completed') {
-      return <span className="px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-semibold">Concluída</span>;
+    if (status === 'completed' || status === 'p2p_settlement') {
+      return <span className="px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-bold uppercase tracking-wide">Concluída</span>;
     }
-    if (status === 'installment') {
-      return <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-lg text-xs font-semibold">Venda a Prazo</span>;
+    if (status === 'installment' || status === 'p2p_pending_payment') {
+      return <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-lg text-xs font-semibold">Pagamento Pendente</span>;
     }
     if (status === 'open') {
       return <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-lg text-xs font-semibold">Em Aberto</span>;
-    }
-    if (status === 'p2p_settlement') {
-      return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold">Acerto de Contas</span>;
     }
     if (status === 'rejected_p2p') {
       return <span className="px-2 py-1 bg-red-600 text-white rounded-lg text-[10px] font-black uppercase shadow-sm animate-pulse whitespace-nowrap">🚨 Ação Nec: Parceiro Recusou</span>;

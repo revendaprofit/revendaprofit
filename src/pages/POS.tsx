@@ -478,7 +478,7 @@ export default function POS() {
           orderGroups.push({ type: 'main', items: localAndHubItems, status: hasInstallments ? 'installment' : 'completed' });
       }
       if (p2pItems.length > 0) {
-          orderGroups.push({ type: 'p2p', items: p2pItems, status: 'p2p_settlement' });
+          orderGroups.push({ type: 'p2p', items: p2pItems, status: hasInstallments ? 'p2p_pending_payment' : 'p2p_settlement' });
       }
 
       const totalCartValue = cart.reduce((acc, c) => acc + (c.price * c.quantity), 0);
@@ -577,7 +577,7 @@ export default function POS() {
             if (fulfillErr) toast.error(`Erro envio hub: ${hubItem.name}`);
           }
 
-          // Itens P2P: criar orders e settlements
+          // Itens P2P: criar orders e (se não for pagamento pendente) settlements
           const groupP2PItems = group.items.filter(c => c._is_p2p);
           if (groupP2PItems.length > 0) {
               const pIds = [...new Set(groupP2PItems.map(c => c._p2p_partnership_id).filter(Boolean))];
@@ -640,17 +640,20 @@ export default function POS() {
                     const grossOwed = (costSliceCreditor + profitSliceCreditor) * p2pItem.quantity;
                     const totalOwedToCreditor = Math.max(0, grossOwed - feeSliceCreditor);
 
-                    await supabase.from('partnership_settlements').insert({
-                       partnership_id: contract.id,
-                       partnership_order_id: pOrder.id,
-                       debtor_id: user.id,
-                       creditor_id: creditorId,
-                       cost_slice: costSliceCreditor * p2pItem.quantity,
-                       profit_slice: profitSliceCreditor * p2pItem.quantity,
-                       fee_slice: feeSliceCreditor,
-                       amount_owed: totalOwedToCreditor,
-                       status: 'open'
-                    });
+                    // Só cria settlement imediatamente se o pagamento não for parcelado
+                    if (group.status !== 'p2p_pending_payment') {
+                      await supabase.from('partnership_settlements').insert({
+                         partnership_id: contract.id,
+                         partnership_order_id: pOrder.id,
+                         debtor_id: user.id,
+                         creditor_id: creditorId,
+                         cost_slice: costSliceCreditor * p2pItem.quantity,
+                         profit_slice: profitSliceCreditor * p2pItem.quantity,
+                         fee_slice: feeSliceCreditor,
+                         amount_owed: totalOwedToCreditor,
+                         status: 'open'
+                      });
+                    }
                  }
               }
           }

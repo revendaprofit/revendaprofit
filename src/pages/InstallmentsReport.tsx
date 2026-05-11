@@ -163,8 +163,86 @@ export default function InstallmentsReport() {
         if (allInsts) {
            const allPaid = allInsts.every(i => i.status === 'paid' || i.status === 'completed');
            const totalFees = allInsts.reduce((acc, i) => acc + (Number(i.fee_amount) || 0), 0);
-           await supabase.from('sales').update({ 
-             status: allPaid ? 'completed' : 'installment',
+
+           let newStatus = allPaid ? 'completed' : 'installment';
+
+           if (allPaid) {
+             // Se era venda P2P parcelada, criar settlements agora que o pagamento está completo
+             const { data: currentSale } = await supabase.from('sales').select('status').eq('id', sale_id).single();
+
+             if (currentSale?.status === 'p2p_pending_payment') {
+               newStatus = 'p2p_settlement';
+
+               const { data: pOrders } = await supabase
+                 .from('partnership_orders')
+                 .select('id, partnership_id, seller_id, owner_id, product_id, sale_price, quantity, partnerships(*)')
+                 .eq('sale_id', sale_id)
+                 .eq('order_type', 'sale');
+
+               const { data: saleItems } = await supabase
+                 .from('sale_items')
+                 .select('product_id, unit_cost, quantity')
+                 .eq('sale_id', sale_id);
+
+               if (pOrders && pOrders.length > 0 && saleItems) {
+                 const totalP2PRevenue = pOrders.reduce((acc: number, po: any) =>
+                   acc + Number(po.sale_price) * Number(po.quantity), 0);
+
+                 for (const pOrder of pOrders) {
+                   const contract = pOrder.partnerships as any;
+                   if (!contract) continue;
+
+                   const saleItem = saleItems.find((si: any) => si.product_id === pOrder.product_id);
+                   const costPrice = saleItem ? Number(saleItem.unit_cost) : 0;
+                   const isMyOwnProduct = pOrder.owner_id === pOrder.seller_id;
+
+                   const customCostPerc = parseFloat(contract.cost_recovery_owner_percent) / 100;
+                   let costSliceCreditor = 0;
+                   if (contract.cost_recovery_type === 'owner_100') {
+                     costSliceCreditor = isMyOwnProduct ? 0 : costPrice;
+                   } else if (contract.cost_recovery_type === 'shared_50_50') {
+                     costSliceCreditor = costPrice * 0.5;
+                   } else if (contract.cost_recovery_type === 'custom') {
+                     costSliceCreditor = isMyOwnProduct
+                       ? costPrice * (1 - customCostPerc)
+                       : costPrice * customCostPerc;
+                   }
+
+                   const lucro = Math.max(0, Number(pOrder.sale_price) - costPrice);
+                   const profitSliceCreditor = lucro * (parseFloat(contract.profit_split_partner_percent) / 100);
+
+                   const itemRevenue = Number(pOrder.sale_price) * Number(pOrder.quantity);
+                   const itemFeeRatio = totalP2PRevenue > 0 ? itemRevenue / totalP2PRevenue : 1;
+                   const itemFees = totalFees * itemFeeRatio;
+                   let feeSliceCreditor = 0;
+                   if (contract.fee_responsibility_type === 'shared_50_50') {
+                     feeSliceCreditor = itemFees * 0.5;
+                   } else if (contract.fee_responsibility_type === 'custom') {
+                     const sellerPercent = Number(contract.fee_responsibility_seller_percent) / 100;
+                     feeSliceCreditor = itemFees * (1 - sellerPercent);
+                   }
+
+                   const grossOwed = (costSliceCreditor + profitSliceCreditor) * Number(pOrder.quantity);
+                   const totalOwed = Math.max(0, grossOwed - feeSliceCreditor);
+
+                   await supabase.from('partnership_settlements').insert({
+                     partnership_id: pOrder.partnership_id,
+                     partnership_order_id: pOrder.id,
+                     debtor_id: pOrder.seller_id,
+                     creditor_id: pOrder.owner_id,
+                     cost_slice: costSliceCreditor * Number(pOrder.quantity),
+                     profit_slice: profitSliceCreditor * Number(pOrder.quantity),
+                     fee_slice: feeSliceCreditor,
+                     amount_owed: totalOwed,
+                     status: 'open'
+                   });
+                 }
+               }
+             }
+           }
+
+           await supabase.from('sales').update({
+             status: newStatus,
              payment_fee_amount: totalFees
            }).eq('id', sale_id);
         }
