@@ -49,12 +49,14 @@ export default function InstallmentsReport() {
         .from('sale_installments')
         .select(`
           id, amount, due_date, status, sale_id, paid_at, payment_method_id, fee_amount,
-          sales (
-            id, payment_method, payment_method_2,
+          sales!inner (
+            id, payment_method, payment_method_2, status,
             customers (id, name, phone),
             sale_items (quantity, products(name))
           )
         `)
+        .not('sales.status', 'eq', 'cancelled')
+        .neq('status', 'cancelled')
         .order('due_date', { ascending: true });
 
       if (error) throw error;

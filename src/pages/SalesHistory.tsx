@@ -122,6 +122,12 @@ export default function SalesHistory() {
         .update({ status: 'cancelled' })
         .eq('id', id);
       if (error) throw error;
+      // Cancelar parcelas pendentes para não aparecerem no relatório a prazo
+      await supabase
+        .from('sale_installments')
+        .update({ status: 'cancelled' })
+        .eq('sale_id', id)
+        .eq('status', 'pending');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales-history'] });
