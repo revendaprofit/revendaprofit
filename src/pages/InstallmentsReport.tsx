@@ -209,31 +209,44 @@ export default function InstallmentsReport() {
                        ? costPrice * (1 - customCostPerc)
                        : costPrice * customCostPerc;
                    }
+                   
+                   // Taxa proporcional deste item
+                    const itemRevenue = Number(pOrder.sale_price) * Number(pOrder.quantity);
+                    const itemFeeRatio = totalP2PRevenue > 0 ? itemRevenue / totalP2PRevenue : 1;
+                    const itemFees = totalFees * itemFeeRatio;
+                    const qty = Number(pOrder.quantity);
+                    const itemFeesPerUnit = qty > 0 ? itemFees / qty : 0;
+                    const lucroBruto = Math.max(0, Number(pOrder.sale_price) - costPrice);
 
-                   const lucro = Math.max(0, Number(pOrder.sale_price) - costPrice);
-                   const profitSliceCreditor = lucro * (parseFloat(contract.profit_split_partner_percent) / 100);
+                    let profitSliceCreditor = 0;
+                    let feeSliceCreditor = 0;
+                    let totalOwed = 0;
 
-                   const itemRevenue = Number(pOrder.sale_price) * Number(pOrder.quantity);
-                   const itemFeeRatio = totalP2PRevenue > 0 ? itemRevenue / totalP2PRevenue : 1;
-                   const itemFees = totalFees * itemFeeRatio;
-                   let feeSliceCreditor = 0;
-                   if (contract.fee_responsibility_type === 'shared_50_50') {
-                     feeSliceCreditor = itemFees * 0.5;
-                   } else if (contract.fee_responsibility_type === 'custom') {
-                     const sellerPercent = Number(contract.fee_responsibility_seller_percent) / 100;
-                     feeSliceCreditor = itemFees * (1 - sellerPercent);
-                   }
+                    if (contract.fee_responsibility_type === 'shared_50_50') {
+                        // MODELO A: taxa abatida do lucro ANTES da divisão 85/15
+                        const lucroLiquido = Math.max(0, lucroBruto - itemFeesPerUnit);
+                        profitSliceCreditor = lucroLiquido * (parseFloat(contract.profit_split_partner_percent) / 100);
+                        feeSliceCreditor = 0;
+                        totalOwed = (costSliceCreditor + profitSliceCreditor) * qty;
+                    } else {
+                        // MODELO B: divide o bruto, depois cada sócia paga sua taxa do próprio lucro
+                        profitSliceCreditor = lucroBruto * (parseFloat(contract.profit_split_partner_percent) / 100);
+                        if (contract.fee_responsibility_type === 'custom') {
+                            const sellerPercent = Number(contract.fee_responsibility_seller_percent) / 100;
+                            feeSliceCreditor = itemFees * (1 - sellerPercent);
+                        }
+                        // seller_100: feeSliceCreditor = 0 (vendedora paga tudo)
+                        const grossOwed = (costSliceCreditor + profitSliceCreditor) * qty;
+                        totalOwed = Math.max(0, grossOwed - feeSliceCreditor);
+                    }
 
-                   const grossOwed = (costSliceCreditor + profitSliceCreditor) * Number(pOrder.quantity);
-                   const totalOwed = Math.max(0, grossOwed - feeSliceCreditor);
-
-                   await supabase.from('partnership_settlements').insert({
+                    await supabase.from('partnership_settlements').insert({
                      partnership_id: pOrder.partnership_id,
                      partnership_order_id: pOrder.id,
                      debtor_id: pOrder.seller_id,
                      creditor_id: pOrder.owner_id,
-                     cost_slice: costSliceCreditor * Number(pOrder.quantity),
-                     profit_slice: profitSliceCreditor * Number(pOrder.quantity),
+                     cost_slice: costSliceCreditor * qty,
+                     profit_slice: profitSliceCreditor * qty,
                      fee_slice: feeSliceCreditor,
                      amount_owed: totalOwed,
                      status: 'open'

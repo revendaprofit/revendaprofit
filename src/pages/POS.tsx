@@ -621,24 +621,34 @@ export default function POS() {
                             : p2pItem.cost_price * customCostPerc;
                     }
 
-                    const lucro = Math.max(0, p2pItem.price - p2pItem.cost_price);
-                    const profitSliceCreditor = lucro * (parseFloat(contract.profit_split_partner_percent) / 100);
+                     // Taxa proporcional deste item
+                     const itemRevenue = p2pItem.price * p2pItem.quantity;
+                     const itemFeeRatio = totalP2PRevenue > 0 ? itemRevenue / totalP2PRevenue : 1;
+                     const itemFees = totalFees * itemFeeRatio;
+                     const itemFeesPerUnit = p2pItem.quantity > 0 ? itemFees / p2pItem.quantity : 0;
+                     const lucroBruto = Math.max(0, p2pItem.price - p2pItem.cost_price);
 
-                    // Fatia de taxa que a credora absorve (proporcional à receita do item)
-                    const itemRevenue = p2pItem.price * p2pItem.quantity;
-                    const itemFeeRatio = totalP2PRevenue > 0 ? itemRevenue / totalP2PRevenue : 1;
-                    const itemFees = totalFees * itemFeeRatio;
-                    let feeSliceCreditor = 0;
-                    if (contract.fee_responsibility_type === 'shared_50_50') {
-                        feeSliceCreditor = itemFees * 0.5;
-                    } else if (contract.fee_responsibility_type === 'custom') {
-                        const sellerPercent = Number(contract.fee_responsibility_seller_percent) / 100;
-                        feeSliceCreditor = itemFees * (1 - sellerPercent);
-                    }
-                    // seller_100: feeSliceCreditor = 0 (padrão)
+                     let profitSliceCreditor = 0;
+                     let feeSliceCreditor = 0;
+                     let totalOwedToCreditor = 0;
 
-                    const grossOwed = (costSliceCreditor + profitSliceCreditor) * p2pItem.quantity;
-                    const totalOwedToCreditor = Math.max(0, grossOwed - feeSliceCreditor);
+                     if (contract.fee_responsibility_type === 'shared_50_50') {
+                         // MODELO A: taxa abatida do lucro ANTES da divisão 85/15
+                         const lucroLiquido = Math.max(0, lucroBruto - itemFeesPerUnit);
+                         profitSliceCreditor = lucroLiquido * (parseFloat(contract.profit_split_partner_percent) / 100);
+                         feeSliceCreditor = 0;
+                         totalOwedToCreditor = (costSliceCreditor + profitSliceCreditor) * p2pItem.quantity;
+                     } else {
+                         // MODELO B: divide o bruto, depois cada sócia paga sua taxa do próprio lucro
+                         profitSliceCreditor = lucroBruto * (parseFloat(contract.profit_split_partner_percent) / 100);
+                         if (contract.fee_responsibility_type === 'custom') {
+                             const sellerPercent = Number(contract.fee_responsibility_seller_percent) / 100;
+                             feeSliceCreditor = itemFees * (1 - sellerPercent);
+                         }
+                         // seller_100: feeSliceCreditor = 0 (vendedora paga tudo)
+                         const grossOwed = (costSliceCreditor + profitSliceCreditor) * p2pItem.quantity;
+                         totalOwedToCreditor = Math.max(0, grossOwed - feeSliceCreditor);
+                     }
 
                     // Só cria settlement imediatamente se o pagamento não for parcelado
                     if (group.status !== 'p2p_pending_payment') {
