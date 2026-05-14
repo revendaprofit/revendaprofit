@@ -75,7 +75,7 @@ export default function StockControl() {
     }
   });
 
-  const { data: products = [], isLoading } = useQuery({
+  const { data: products = [], isLoading, isError, error: productsError } = useQuery({
     queryKey: ['products', activeTab, filters],
     queryFn: async () => {
       const userLocal = (await supabase.auth.getUser()).data.user;
@@ -389,6 +389,7 @@ export default function StockControl() {
           </TableHeader>
           <TableBody>
             {isLoading ? <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow> :
+              isError ? <TableRow><TableCell colSpan={8} className="text-center py-8 text-red-500">Erro ao carregar produtos: {(productsError as any)?.message || String(productsError)}</TableCell></TableRow> :
               filtered.length === 0 ? <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum produto.</TableCell></TableRow> :
                 filtered.map((p: any) => {
                   const isP2p = activeTab === 'p2p';
