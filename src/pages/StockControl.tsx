@@ -406,7 +406,7 @@ export default function StockControl() {
                       {!isP2p && <input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => toggleSelect(p.id)} className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" />}
                     </TableCell>
                     <TableCell className="px-2 py-2">
-                      {p.image_url ? <img src={p.image_url} alt={p.name} className="w-10 h-10 object-cover rounded shadow border min-w-[40px]" /> : <div className="w-10 h-10 bg-muted/30 rounded flex items-center justify-center border text-xs text-muted-foreground min-w-[40px]">-</div>}
+                      {p.image_url ? <img src={p.image_url} alt={p.name} loading="lazy" className="w-10 h-10 object-cover rounded shadow border min-w-[40px]" /> : <div className="w-10 h-10 bg-muted/30 rounded flex items-center justify-center border text-xs text-muted-foreground min-w-[40px]">-</div>}
                     </TableCell>
                     <TableCell className="font-medium px-2 py-2 text-xs sm:text-sm leading-tight max-w-[150px] sm:max-w-none break-words">
                        {p.name}

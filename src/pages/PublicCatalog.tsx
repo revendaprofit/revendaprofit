@@ -31,15 +31,7 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
   const activeMedia = mediaList[currentMediaIndex] || p.image_url;
   const isVideo = activeMedia && typeof activeMedia === 'string' && (activeMedia.includes('.mp4') || activeMedia.includes('.webm') || activeMedia.includes('.mov'));
 
-  useEffect(() => {
-    if (mediaList.length <= 1) return;
-    if (isVideo) return; // Se for vídeo, aguarda terminar
-    
-    const timer = setTimeout(() => {
-      setCurrentMediaIndex(prev => (prev + 1) % mediaList.length);
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [currentMediaIndex, isVideo, mediaList.length]);
+  // Slideshow disabled to reduce CDN bandwidth usage — user can tap dots to navigate
 
   return (
     <div className={`rounded-2xl overflow-hidden shadow-sm border hover:shadow-md transition-shadow group flex ${isList ? 'flex-row min-h-[128px] md:min-h-[160px]' : 'flex-col'}`} style={{ backgroundColor: store.card_bg_color || '#ffffff', borderColor: 'rgba(0,0,0,0.05)' }}>
@@ -62,10 +54,11 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
               }}
             />
           ) : (
-            <img 
-              src={activeMedia} 
-              alt={p.name} 
-              className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500" 
+            <img
+              src={activeMedia}
+              alt={p.name}
+              loading="lazy"
+              className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
               onError={(e) => {
                 e.currentTarget.onerror = null;
                 e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 24 24' fill='none' stroke='%23d1d5db' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z'/%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M16 10a4 4 0 0 1-8 0'/%3E%3C/svg%3E";
@@ -184,10 +177,11 @@ function BazarCard({ item, store, cart, handleAddToCart }: { item: any; store: a
     <div className="rounded-2xl overflow-hidden shadow-sm border hover:shadow-md transition-shadow group flex flex-col" style={{ backgroundColor: store.card_bg_color || '#ffffff', borderColor: 'rgba(0,0,0,0.05)' }}>
       <div className="aspect-[4/5] bg-gray-100 relative overflow-hidden flex items-center justify-center">
         {item.images?.[0] ? (
-          <img 
-            src={item.images[0]} 
-            alt={item.title} 
-            className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500" 
+          <img
+            src={item.images[0]}
+            alt={item.title}
+            loading="lazy"
+            className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
             onError={(e) => {
               e.currentTarget.onerror = null;
               e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='%23d1d5db' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z'/%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M16 10a4 4 0 0 1-8 0'/%3E%3C/svg%3E";
@@ -771,12 +765,12 @@ export default function PublicCatalog() {
       <div className="max-w-5xl mx-auto">
          {store.banner_desktop_url && (
             <div className="hidden sm:block w-full h-auto mt-4 px-4">
-              <img src={store.banner_desktop_url} alt="Banner Promocional" className="w-full object-cover rounded-xl shadow-sm" />
+              <img src={store.banner_desktop_url} alt="Banner Promocional" loading="lazy" className="w-full object-cover rounded-xl shadow-sm" />
             </div>
          )}
          {store.banner_mobile_url && (
             <div className="block sm:hidden w-full h-auto mt-4 px-4">
-              <img src={store.banner_mobile_url} alt="Banner Promocional" className="w-full object-cover rounded-xl shadow-sm" />
+              <img src={store.banner_mobile_url} alt="Banner Promocional" loading="lazy" className="w-full object-cover rounded-xl shadow-sm" />
             </div>
          )}
       </div>
@@ -1012,7 +1006,7 @@ export default function PublicCatalog() {
                                 {isVideo ? (
                                   <video src={media} className="object-cover w-full h-full" autoPlay muted loop controls playsInline />
                                 ) : (
-                                  <img src={media} alt={`${selectedProduct?.name} ${index + 1}`} className="object-cover w-full h-full" />
+                                  <img src={media} alt={`${selectedProduct?.name} ${index + 1}`} loading="lazy" className="object-cover w-full h-full" />
                                 )}
                               </div>
                             );
