@@ -6,14 +6,34 @@ import { Product } from '@/pages/StockControl';
 
 export default function StockExportDialog({ products }: { products: Product[] }) {
   const handleExport = () => {
-    const data = products.map(p => ({
-      ID: p.id,
-      Nome: p.name,
-      'Preço Custo': p.cost_price,
-      'Preço Venda': p.sale_price,
-      Estoque: p.total_stock,
-      Status: p.marketing_status
-    }));
+    const data: object[] = [];
+
+    for (const p of products) {
+      const variants = (p as any).product_variants ?? [];
+      if (variants.length === 0) {
+        data.push({
+          Nome: p.name,
+          Tamanho: 'Único',
+          Cor: '-',
+          Estoque: p.total_stock ?? 0,
+          'Preço Custo (R$)': p.cost_price,
+          'Preço Venda (R$)': p.sale_price,
+          Status: p.marketing_status,
+        });
+      } else {
+        for (const v of variants) {
+          data.push({
+            Nome: p.name,
+            Tamanho: v.size || '-',
+            Cor: v.color || '-',
+            Estoque: v.stock ?? 0,
+            'Preço Custo (R$)': p.cost_price,
+            'Preço Venda (R$)': p.sale_price,
+            Status: p.marketing_status,
+          });
+        }
+      }
+    }
 
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
