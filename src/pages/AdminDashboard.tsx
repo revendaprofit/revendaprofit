@@ -22,6 +22,7 @@ export default function AdminDashboard() {
   // BotConversa webhook config
   const [webhookUrl, setWebhookUrl] = useState('');
   const [savingWebhook, setSavingWebhook] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
 
   useEffect(() => {
     supabase.from('system_config').select('value').eq('key', 'botconversa_webhook_url').single()
@@ -37,6 +38,37 @@ export default function AdminDashboard() {
     setSavingWebhook(false);
     if (error) toast.error('Erro ao salvar: ' + error.message);
     else toast.success('URL do webhook BotConversa salva!');
+  };
+
+  const handleTestWebhook = async () => {
+    const url = webhookUrl.trim();
+    if (!url) return toast.error('Salve a URL do webhook antes de testar.');
+    setSendingTest(true);
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone:           '5511999999999',
+          nome:            'João Silva',
+          valor:           'R$ 250,00',
+          codigo:          'PED-0001',
+          parceiro:        'Ponto Norte',
+          cliente:         'Maria Souza',
+          malinha:         'Malinha 01',
+          pecas_ficaram:   '3',
+          pecas_compradas: '3',
+          nomes:           'Ana, Beatriz',
+          quantidade:      '2',
+          telefone:        '5511999999999',
+        }),
+      });
+      toast.success('Payload enviado! Abra o BotConversa para mapear as variáveis.');
+    } catch (e: any) {
+      toast.error('Erro ao enviar: ' + e.message);
+    } finally {
+      setSendingTest(false);
+    }
   };
   const [recoveryLink, setRecoveryLink] = useState<string | null>(null);
 
@@ -600,9 +632,19 @@ export default function AdminDashboard() {
             {savingWebhook ? 'Salvando...' : 'Salvar'}
           </Button>
         </div>
-        <p className="text-slate-500 text-xs mt-2">
-          Configure este webhook no BotConversa. As variáveis enviadas no payload dependem do tipo de evento (ex: <code className="text-green-400">phone</code>, <code className="text-green-400">nome_cliente</code>, <code className="text-green-400">valor_pedido</code>).
-        </p>
+        <div className="mt-3 flex items-start justify-between gap-4">
+          <p className="text-slate-500 text-xs leading-relaxed">
+            Variáveis disponíveis no payload: <code className="text-green-400">phone</code>, <code className="text-green-400">nome</code>, <code className="text-green-400">valor</code>, <code className="text-green-400">codigo</code>, <code className="text-green-400">parceiro</code>, <code className="text-green-400">cliente</code>, <code className="text-green-400">malinha</code>, <code className="text-green-400">pecas_ficaram</code>, <code className="text-green-400">pecas_compradas</code>, <code className="text-green-400">nomes</code>, <code className="text-green-400">quantidade</code>, <code className="text-green-400">telefone</code>
+          </p>
+          <Button
+            onClick={handleTestWebhook}
+            disabled={sendingTest || !webhookUrl.trim()}
+            variant="outline"
+            className="shrink-0 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white text-xs px-4"
+          >
+            {sendingTest ? 'Enviando...' : '⚡ Disparar Teste'}
+          </Button>
+        </div>
       </div>
 
     </div>
