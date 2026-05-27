@@ -89,8 +89,8 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
 
         {p._is_p2p && !isList && (
            <div className="absolute top-2 left-2 z-20">
-              <div className="bg-blue-600/90 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm uppercase tracking-wider">
-                 <LinkIcon className="h-3 w-3" /> Parceria
+              <div className="bg-blue-600/90 backdrop-blur-sm text-white p-1.5 rounded-full shadow-sm" title="Produto de parceria">
+                 <LinkIcon className="h-3 w-3" />
               </div>
            </div>
         )}

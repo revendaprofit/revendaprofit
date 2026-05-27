@@ -1,76 +1,72 @@
 export function consolidateProducts(products: any[]) {
   const map = new Map<string, any>();
 
-  // Helper to normalize names for comparison
-  const normalize = (name: string) => name.toLowerCase().trim().replace(/^(🏪|🤝)\s*/, '');
+  const normalize = (name: string) =>
+    name
+      .toLowerCase()
+      .trim()
+      .replace(/^(🏪|🤝)\s*/, '')           // remove emoji prefix
+      .replace(/[\s_-]*(parceria|parceiro|sócia|socia|p2p|sócia\s*&\s*parceira)[\s_-]*/gi, '') // remove P2P keywords anywhere
+      .replace(/\(.*?\)/g, '')              // remove anything in parentheses
+      .trim();
+
+  const variantKey = (v: any) =>
+    `${(v.size || '').toLowerCase().trim()}-${(v.color || '').toLowerCase().trim()}`;
 
   for (const p of products) {
     const normName = normalize(p.name);
-    
+
     if (!map.has(normName)) {
-       // Clone the product and its variants so we don't mutate the original
-       map.set(normName, { ...p, product_variants: [...(p.product_variants || [])] });
+      map.set(normName, { ...p, product_variants: [...(p.product_variants || [])] });
     } else {
-       const existing = map.get(normName);
-       
-       // Determine priority: Local (3) > Hub (2) > P2P (1)
-       const getScore = (prod: any) => {
-          if (!prod._is_hub && !prod._is_p2p) return 3; // Local
-          if (prod._is_hub) return 2; // Hub
-          return 1; // P2P
-       };
-       
-       let base = existing;
-       let other = p;
-       
-       if (getScore(p) > getScore(existing)) {
-          // p has higher priority, it becomes the base
-          base = { ...p, product_variants: [...(p.product_variants || [])] };
-          other = existing;
-          map.set(normName, base);
-       }
-       
-       // Build a map of the 'other' variants by normalized key
-       const otherVariantsByKey = new Map<string, any>();
-       for (const v of other.product_variants || []) {
-           const vKey = `${(v.size || '').toLowerCase()}-${(v.color || '').toLowerCase()}`;
-           otherVariantsByKey.set(vKey, {
-               ...v,
-               // Inject parent tracking info
-               _is_p2p: other._is_p2p,
-               _is_hub: other._is_hub,
-               _parent_id: other.id,
-               _p2p_partnership_id: other._p2p_partnership_id,
-               _p2p_owner_id: other._p2p_owner_id,
-               _p2p_creditor_id: other._p2p_creditor_id,
-               _p2p_original_owner_id: other._p2p_original_owner_id,
-               _hub_product_id: other._hub_product_id,
-               _supplier_id: other._supplier_id,
-           });
-       }
-       
-       // If the OTHER source is P2P, keep BOTH the local variant AND the P2P variant
-       // so the user can choose to sell from their own stock (normal flow) or from 
-       // the partner's stock (P2P flow with settlement).
-       if (other._is_p2p) {
-           // Don't replace — just remove consumed keys so they aren't double-added below
-           // Actually we want ALL P2P variants to be added, so we leave otherVariantsByKey intact.
-           // We only need to avoid the old "replace" logic. The remaining loop at line 74+
-           // will push every P2P variant (including overlapping ones) into the array.
-       }
-       // If the BASE is P2P and other is local, replace base P2P variants that match local
-       else if (base._is_p2p && !other._is_p2p) {
-           // Actually in this case, base has higher priority (local), so we check if other (P2P) 
-           // has variants that match. We already swapped base/other above so base is always higher priority.
-           // This branch won't normally trigger since local > p2p, but just in case:
-       }
-       
-       // Add remaining other variants that didn't overlap (unique sizes/colors from the other source)
-       for (const [, v] of otherVariantsByKey) {
-           base.product_variants.push(v);
-       }
+      const existing = map.get(normName);
+
+      // Priority: Local (3) > Hub (2) > P2P (1)
+      const getScore = (prod: any) => {
+        if (!prod._is_hub && !prod._is_p2p) return 3;
+        if (prod._is_hub) return 2;
+        return 1;
+      };
+
+      let base = existing;
+      let other = p;
+
+      if (getScore(p) > getScore(existing)) {
+        base = { ...p, product_variants: [...(p.product_variants || [])] };
+        other = existing;
+        map.set(normName, base);
+      }
+
+      // Build set of size-color keys already present in base (local/hub variants)
+      const baseVariantKeys = new Set<string>(
+        (base.product_variants || [])
+          .filter((v: any) => !v._is_p2p)
+          .map(variantKey)
+      );
+
+      // Add variants from the other source, skipping P2P ones that duplicate a local/hub variant
+      for (const v of other.product_variants || []) {
+        const vKey = variantKey(v);
+        const isP2P = other._is_p2p || v._is_p2p;
+
+        // If this variant already exists in local/hub stock, don't show the P2P copy
+        if (isP2P && baseVariantKeys.has(vKey)) continue;
+
+        base.product_variants.push({
+          ...v,
+          _is_p2p: other._is_p2p,
+          _is_hub: other._is_hub,
+          _parent_id: other.id,
+          _p2p_partnership_id: other._p2p_partnership_id,
+          _p2p_owner_id: other._p2p_owner_id,
+          _p2p_creditor_id: other._p2p_creditor_id,
+          _p2p_original_owner_id: other._p2p_original_owner_id,
+          _hub_product_id: other._hub_product_id,
+          _supplier_id: other._supplier_id,
+        });
+      }
     }
   }
-  
+
   return Array.from(map.values());
 }
