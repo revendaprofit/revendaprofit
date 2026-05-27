@@ -23,6 +23,7 @@ export default function AdminDashboard() {
   const [webhookUrl, setWebhookUrl] = useState('');
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
+  const [testPhone, setTestPhone] = useState('');
 
   // Notification templates
   const EVENT_TYPES = [
@@ -34,8 +35,45 @@ export default function AdminDashboard() {
     { key: 'birthday',            label: 'Aniversariante(s) hoje',     emoji: '🎂', vars: ['nomes','quantidade'] },
     { key: 'overdue_installment', label: 'Parcelas vencidas',          emoji: '⚠️', vars: ['quantidade'] },
   ];
+
+  const SAMPLE_VARS: Record<string, Record<string, string>> = {
+    new_order:           { nome: 'Maria Silva', valor: 'R$ 189,90', codigo: 'PED-0042' },
+    partner_order:       { nome: 'Ana Lima', parceiro: 'Ponto Centro', valor: 'R$ 250,00', codigo: 'PED-0043' },
+    customer_signup:     { nome: 'Beatriz Santos', telefone: '5511988887777' },
+    bag_accepted:        { cliente: 'Juliana Costa', malinha: 'Malinha 03', pecas_ficaram: '4' },
+    bag_finalized:       { cliente: 'Juliana Costa', malinha: 'Malinha 03', pecas_compradas: '4', valor: 'R$ 360,00' },
+    birthday:            { nomes: 'Carla, Fernanda', quantidade: '2' },
+    overdue_installment: { quantidade: '3' },
+  };
+
   const [templates, setTemplates] = useState<Record<string, string>>({});
   const [savingTemplates, setSavingTemplates] = useState(false);
+  const [testingEvent, setTestingEvent] = useState<string | null>(null);
+
+  const handleTestEvent = async (eventKey: string) => {
+    const url = webhookUrl.trim();
+    if (!url) return toast.error('Configure e salve a URL do webhook primeiro.');
+    const phone = testPhone.replace(/\D/g, '');
+    if (!phone) return toast.error('Informe o número de WhatsApp para receber o teste.');
+
+    const template = templates[eventKey] ?? '';
+    const sampleVars = SAMPLE_VARS[eventKey] ?? {};
+    const mensagem = template.replace(/\{\{(\w+)\}\}/g, (_, key) => sampleVars[key] ?? `{{${key}}}`);
+
+    setTestingEvent(eventKey);
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phone.startsWith('55') ? phone : `55${phone}`, mensagem, ...sampleVars }),
+      });
+      toast.success('Mensagem de teste enviada! Verifique o WhatsApp.');
+    } catch (e: any) {
+      toast.error('Erro ao enviar: ' + e.message);
+    } finally {
+      setTestingEvent(null);
+    }
+  };
 
   useEffect(() => {
     supabase.from('system_config').select('value').eq('key', 'botconversa_webhook_url').single()
@@ -669,19 +707,23 @@ export default function AdminDashboard() {
             {savingWebhook ? 'Salvando...' : 'Salvar'}
           </Button>
         </div>
-        <div className="mt-3 flex items-start justify-between gap-4">
-          <p className="text-slate-500 text-xs leading-relaxed">
-            Variáveis disponíveis no payload: <code className="text-green-400">phone</code>, <code className="text-green-400">nome</code>, <code className="text-green-400">valor</code>, <code className="text-green-400">codigo</code>, <code className="text-green-400">parceiro</code>, <code className="text-green-400">cliente</code>, <code className="text-green-400">malinha</code>, <code className="text-green-400">pecas_ficaram</code>, <code className="text-green-400">pecas_compradas</code>, <code className="text-green-400">nomes</code>, <code className="text-green-400">quantidade</code>, <code className="text-green-400">telefone</code>
-          </p>
+        <div className="mt-4 flex gap-3 items-center">
+          <Input
+            value={testPhone}
+            onChange={e => setTestPhone(e.target.value)}
+            placeholder="Seu WhatsApp para receber testes (ex: 11999999999)"
+            className="flex-1 bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-yellow-500"
+          />
           <Button
             onClick={handleTestWebhook}
             disabled={sendingTest || !webhookUrl.trim()}
             variant="outline"
-            className="shrink-0 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white text-xs px-4"
+            className="shrink-0 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white text-xs px-4 whitespace-nowrap"
           >
-            {sendingTest ? 'Enviando...' : '⚡ Disparar Teste'}
+            {sendingTest ? 'Enviando...' : '⚡ Teste Geral'}
           </Button>
         </div>
+        <p className="text-slate-600 text-xs mt-2">O número acima é usado nos botões de teste de cada mensagem abaixo.</p>
       </div>
 
       {/* ── Mensagens de Notificação ── */}
@@ -736,6 +778,21 @@ export default function AdminDashboard() {
                 placeholder={`Mensagem para o evento "${label}"...`}
                 className="w-full bg-slate-900 border border-slate-600 text-white placeholder:text-slate-500 rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:border-blue-500 transition-colors font-mono leading-relaxed"
               />
+              <div className="mt-2 flex items-start justify-between gap-3">
+                <p className="text-slate-600 text-[11px] leading-relaxed pt-0.5">
+                  Dados de exemplo: {Object.entries(SAMPLE_VARS[key] ?? {}).map(([k, v]) => (
+                    <span key={k} className="text-slate-500"><code className="text-green-500">{`{{${k}}}`}</code> = "{v}" </span>
+                  ))}
+                </p>
+                <Button
+                  onClick={() => handleTestEvent(key)}
+                  disabled={testingEvent === key || !webhookUrl.trim()}
+                  variant="outline"
+                  className="shrink-0 border-slate-600 text-yellow-400 hover:bg-slate-700 hover:text-yellow-300 text-xs px-3 h-8 whitespace-nowrap"
+                >
+                  {testingEvent === key ? 'Enviando...' : '⚡ Testar'}
+                </Button>
+              </div>
             </div>
           ))}
         </div>
