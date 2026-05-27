@@ -68,10 +68,10 @@ export default function WaitlistPage() {
         user!.id,
         {
           cliente: entry.customer_name,
+          telefone: entry.customer_phone,
           produto: product?.name || 'Produto',
           tamanho: variant?.size || '',
         },
-        entry.customer_phone,
       );
       const { error } = await supabase
         .from('product_waitlist')

@@ -129,10 +129,10 @@ export default function ConsignmentSettlementSheet({ bagId, open, onOpenChange }
                 bag.owner_id,
                 {
                   cliente: entry.customer_name,
+                  telefone: entry.customer_phone,
                   produto: item?.product?.name || 'Produto',
                   tamanho: variantSize,
                 },
-                entry.customer_phone,
               );
               await supabase
                 .from('product_waitlist')
