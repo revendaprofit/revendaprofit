@@ -104,6 +104,43 @@ export default function ConsignmentSettlementSheet({ bagId, open, onOpenChange }
           pecas_compradas: String(keptCount),
           valor: `R$ ${keptItems.reduce((acc: number, item: any) => acc + (item.product?.sale_price * item.quantity || 0), 0).toFixed(2)}`,
         });
+
+        // Notify waitlist customers for returned/pending variants
+        const returnedVariantIds = [...returnedItems, ...pendingItems]
+          .map((i: any) => i.variant_id)
+          .filter(Boolean);
+        if (returnedVariantIds.length > 0) {
+          (async () => {
+            const { data: waitlistEntries } = await supabase
+              .from('product_waitlist')
+              .select('id, customer_name, customer_phone, variant_id')
+              .eq('owner_id', bag.owner_id)
+              .in('variant_id', returnedVariantIds)
+              .is('notified_at', null);
+
+            for (const entry of waitlistEntries || []) {
+              const item = [...returnedItems, ...pendingItems].find(
+                (i: any) => i.variant_id === entry.variant_id,
+              );
+              const variantSize =
+                item?.product?.variants?.find((v: any) => v.id === entry.variant_id)?.size || '';
+              await notifyBotConversa(
+                'waitlist_available',
+                bag.owner_id,
+                {
+                  cliente: entry.customer_name,
+                  produto: item?.product?.name || 'Produto',
+                  tamanho: variantSize,
+                },
+                entry.customer_phone,
+              );
+              await supabase
+                .from('product_waitlist')
+                .update({ notified_at: new Date().toISOString() })
+                .eq('id', entry.id);
+            }
+          })();
+        }
       }
 
       if (keptCount > 0) {

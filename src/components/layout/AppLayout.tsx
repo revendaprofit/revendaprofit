@@ -89,6 +89,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     [
       { name: "Minha Loja", href: "/settings", icon: Settings },
       { name: "Bolsas Consignadas", href: "/consignment-bags", icon: Briefcase },
+      { name: "Fila de Espera", href: "/waitlist", icon: Clock },
       { name: "Modo Evento", href: "/event-mode", icon: Ticket, disabled: true },
       { name: "Consórcios", href: "/consortiums", icon: PiggyBank },
       { name: "Bazar VIP", href: "/bazar-admin", icon: Sparkles },

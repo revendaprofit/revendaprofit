@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star, Sparkles, Flame, Lock } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star, Sparkles, Flame, Lock, Clock, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { consolidateProducts } from '@/utils/productConsolidator';
 import { notifyBotConversa } from '@/utils/notifyBotConversa';
 
-function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: any) {
+function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct, inConsignmentVariantIds, onWaitlist }: any) {
   const rawInStockVariants = p.product_variants?.filter((v: any) => v.stock > 0) || [];
   const inStockVariants = Object.values(rawInStockVariants.reduce((acc: Record<string, any>, v: any) => {
     const key = `${v.size || ''}_${v.color || ''}`.trim();
@@ -143,23 +143,34 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: a
                   });
                   return sorted.map((v: any) => {
                     const qtyInCart = cart.find((c:any) => c.variant_id === v.id)?.qty || 0;
+                    const isInConsignment = inConsignmentVariantIds?.has(v.id);
+                    const isDeal = !isInConsignment && v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price;
                     return (
-                      <button 
+                      <button
                         key={v.id}
-                        onClick={(e) => { e.stopPropagation(); onAddToCart(p, v); }}
-                        disabled={qtyInCart >= v.stock}
-                        className={`text-xs font-medium px-2.5 py-1.5 rounded-md border flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors z-30 relative ${
-                          v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price ? 'border-red-300 bg-red-50 text-red-700' : ''
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isInConsignment) { onWaitlist?.(p, v); }
+                          else { onAddToCart(p, v); }
+                        }}
+                        disabled={!isInConsignment && qtyInCart >= v.stock}
+                        className={`text-xs font-medium px-2.5 py-1.5 rounded-md border flex items-center justify-center transition-colors z-30 relative ${
+                          isInConsignment
+                            ? 'border-yellow-400 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                            : isDeal
+                              ? 'border-red-300 bg-red-50 text-red-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed'
+                              : 'hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed'
                         }`}
-                        title={v.sale_price && parseFloat(v.sale_price) > 0 ? `R$ ${parseFloat(v.sale_price).toFixed(2)}` : `R$ ${p.sale_price.toFixed(2)}`}
+                        title={isInConsignment ? 'Em malinha — entrar na fila de espera' : (v.sale_price && parseFloat(v.sale_price) > 0 ? `R$ ${parseFloat(v.sale_price).toFixed(2)}` : `R$ ${p.sale_price.toFixed(2)}`)}
                       >
-                        {v._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
-                        {v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price && <Flame className="h-3 w-3 mr-0.5 text-red-500" />}
+                        {isInConsignment && <Clock className="h-3 w-3 mr-1 text-yellow-500" />}
+                        {!isInConsignment && v._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
+                        {isDeal && <Flame className="h-3 w-3 mr-0.5 text-red-500" />}
                         {v.size}
-                        {v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price && (
+                        {isDeal && (
                           <span className="ml-1 text-[9px] font-bold text-red-600">R${parseFloat(v.sale_price).toFixed(0)}</span>
                         )}
-                        {qtyInCart > 0 && <span className="ml-1.5 bg-primary text-white text-[10px] h-4 w-4 rounded-full flex items-center justify-center">{qtyInCart}</span>}
+                        {!isInConsignment && qtyInCart > 0 && <span className="ml-1.5 bg-primary text-white text-[10px] h-4 w-4 rounded-full flex items-center justify-center">{qtyInCart}</span>}
                       </button>
                     )
                   });
@@ -243,6 +254,15 @@ export default function PublicCatalog() {
   const [customerWhatsapp, setCustomerWhatsapp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [leadCaptured, setLeadCaptured] = useState(false);
+
+  // Waitlist (Fila de Espera)
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [waitlistProduct, setWaitlistProduct] = useState<any>(null);
+  const [waitlistVariant, setWaitlistVariant] = useState<any>(null);
+  const [waitlistName, setWaitlistName] = useState('');
+  const [waitlistPhone, setWaitlistPhone] = useState('');
+  const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
+  const [waitlistSubmitted, setWaitlistSubmitted] = useState(false);
 
   // VIP Deals password
   const [dealsUnlocked, setDealsUnlocked] = useState(false);
@@ -471,6 +491,24 @@ export default function PublicCatalog() {
     }
   });
 
+  // Variantes atualmente em malinhas ativas (para badge amarelo)
+  const { data: consignmentVariantData = [] } = useQuery({
+    queryKey: ['public-consignment-variants', store?.owner_id],
+    enabled: !!store?.owner_id,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await supabase.rpc('get_variants_in_consignment', {
+        p_owner_id: store!.owner_id,
+      });
+      return data || [];
+    },
+  });
+
+  const inConsignmentVariantIds = useMemo(
+    () => new Set<string>(consignmentVariantData.map((r: any) => r.variant_id)),
+    [consignmentVariantData],
+  );
+
   // Mescla produtos locais + hub importados + parcerias
   const products = useMemo(() => {
     return consolidateProducts([...localProducts, ...hubImportedProducts, ...partnershipProducts]);
@@ -654,6 +692,33 @@ export default function PublicCatalog() {
       }
       return prev.filter(c => c.variant_id !== variant_id);
     });
+  };
+
+  const handleWaitlistOpen = (product: any, variant: any) => {
+    setWaitlistProduct(product);
+    setWaitlistVariant(variant);
+    setWaitlistName('');
+    setWaitlistPhone('');
+    setWaitlistSubmitted(false);
+    setWaitlistOpen(true);
+  };
+
+  const handleWaitlistSubmit = async () => {
+    if (!waitlistName.trim() || !waitlistPhone.trim() || !store?.owner_id || !waitlistVariant) return;
+    setWaitlistSubmitting(true);
+    try {
+      await supabase.rpc('register_waitlist_interest', {
+        p_owner_id: store.owner_id,
+        p_variant_id: waitlistVariant.id,
+        p_customer_name: waitlistName.trim(),
+        p_customer_phone: waitlistPhone.trim(),
+      });
+      setWaitlistSubmitted(true);
+    } catch {
+      toast.error('Erro ao entrar na fila. Tente novamente.');
+    } finally {
+      setWaitlistSubmitting(false);
+    }
   };
 
   const finishPurchaseWhatsApp = async () => {
@@ -904,14 +969,16 @@ export default function PublicCatalog() {
         ) : (
           <div className={store.product_layout === 'list' ? "flex flex-col gap-4" : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6"}>
             {filteredProducts.map(p => (
-              <ProductCard 
-                key={p.id} 
-                p={p} 
-                isList={store.product_layout === 'list'} 
-                store={store} 
-                cart={cart} 
+              <ProductCard
+                key={p.id}
+                p={p}
+                isList={store.product_layout === 'list'}
+                store={store}
+                cart={cart}
                 onAddToCart={handleAddToCart}
                 onSelectProduct={setSelectedProduct}
+                inConsignmentVariantIds={inConsignmentVariantIds}
+                onWaitlist={handleWaitlistOpen}
               />
             ))}
             {/* Itens do Bazar VIP misturados em "Todos Produtos" */}
@@ -1168,6 +1235,73 @@ export default function PublicCatalog() {
                 )}
              </Button>
            </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Fila de Espera */}
+      <Dialog open={waitlistOpen} onOpenChange={(o) => { setWaitlistOpen(o); if (!o) setWaitlistSubmitted(false); }}>
+        <DialogContent className="sm:max-w-md p-6 bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold font-store-title text-gray-900 border-b pb-4 mb-2 flex items-center gap-2">
+              <Clock className="h-5 w-5 text-yellow-500" /> Fila de Espera
+            </DialogTitle>
+          </DialogHeader>
+
+          {waitlistSubmitted ? (
+            <div className="py-6 text-center space-y-3">
+              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto">
+                <Bell className="h-8 w-8 text-yellow-500" />
+              </div>
+              <p className="font-bold text-gray-900 text-lg">Você está na fila!</p>
+              <p className="text-sm text-gray-500">Assim que a peça retornar ao estoque, você receberá uma mensagem no WhatsApp.</p>
+              <Button className="w-full mt-2" onClick={() => setWaitlistOpen(false)}>Fechar</Button>
+            </div>
+          ) : (
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 p-3 rounded-xl">
+                {waitlistProduct?.image_url && (
+                  <img src={waitlistProduct.image_url} className="w-12 h-14 object-cover rounded-lg shrink-0" />
+                )}
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm">{waitlistProduct?.name}</p>
+                  <p className="text-xs text-yellow-700 font-medium mt-0.5">
+                    Tamanho: {waitlistVariant?.size}{waitlistVariant?.color ? ` · ${waitlistVariant.color}` : ''}
+                  </p>
+                  <p className="text-xs text-yellow-600 mt-1">⏳ Esta peça está em uma malinha de outra cliente</p>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-600">Deixe seus dados para ser avisada quando a peça voltar:</p>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 block">Seu nome</label>
+                <Input
+                  placeholder="Como podemos te chamar?"
+                  value={waitlistName}
+                  onChange={e => setWaitlistName(e.target.value)}
+                  className="h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 block">Seu WhatsApp</label>
+                <Input
+                  placeholder="(00) 00000-0000"
+                  value={waitlistPhone}
+                  onChange={e => setWaitlistPhone(e.target.value)}
+                  className="h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                />
+              </div>
+
+              <Button
+                onClick={handleWaitlistSubmit}
+                disabled={waitlistSubmitting || !waitlistName.trim() || !waitlistPhone.trim()}
+                className="w-full h-12 bg-yellow-500 hover:bg-yellow-600 text-white font-bold border-none"
+              >
+                {waitlistSubmitting ? 'Registrando...' : '🔔 Entrar na Fila de Espera'}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

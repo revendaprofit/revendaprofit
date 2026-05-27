@@ -10,6 +10,7 @@ interface NotifyPayload {
   event_type: string;
   owner_id: string;
   variables: Record<string, string>;
+  phone_override?: string; // customer-targeted notifications (e.g. waitlist_available)
 }
 
 const PREF_MAP: Record<string, string> = {
@@ -34,7 +35,7 @@ serve(async (req) => {
     );
 
     const body: NotifyPayload = await req.json();
-    const { event_type, owner_id, variables } = body;
+    const { event_type, owner_id, variables, phone_override } = body;
 
     if (!event_type || !owner_id) {
       return new Response(JSON.stringify({ ok: false, error: 'missing event_type or owner_id' }), {
@@ -56,34 +57,41 @@ serve(async (req) => {
       });
     }
 
-    // 2. Preferências + telefone da lojista
-    const prefCol = PREF_MAP[event_type];
-    const cols = ['whatsapp', prefCol].filter(Boolean).join(', ');
+    // 2. Resolve destination phone
+    let phone: string;
 
-    const { data: settings } = await supabase
-      .from('store_settings')
-      .select(cols)
-      .eq('owner_id', owner_id)
-      .single();
+    if (phone_override) {
+      // Customer-targeted: skip owner prefs and use the provided phone
+      const raw = phone_override.replace(/\D/g, '');
+      phone = raw.startsWith('55') ? raw : `55${raw}`;
+    } else {
+      // Owner-targeted: fetch whatsapp + check pref toggle
+      const prefCol = PREF_MAP[event_type];
+      const cols = ['whatsapp', prefCol].filter(Boolean).join(', ');
 
-    if (!settings?.whatsapp) {
-      return new Response(JSON.stringify({ ok: false, reason: 'no_phone' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      const { data: settings } = await supabase
+        .from('store_settings')
+        .select(cols)
+        .eq('owner_id', owner_id)
+        .single();
+
+      if (!settings?.whatsapp) {
+        return new Response(JSON.stringify({ ok: false, reason: 'no_phone' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (prefCol && settings[prefCol] === false) {
+        return new Response(JSON.stringify({ ok: false, reason: 'notification_disabled' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const rawPhone = settings.whatsapp.replace(/\D/g, '');
+      phone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`;
     }
 
-    // 3. Checar se notificação está habilitada
-    if (prefCol && settings[prefCol] === false) {
-      return new Response(JSON.stringify({ ok: false, reason: 'notification_disabled' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 4. Formatar telefone (garantir 55 + DDD + número)
-    const rawPhone = settings.whatsapp.replace(/\D/g, '');
-    const phone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`;
-
-    // 5. Buscar template e interpolar variáveis → campo mensagem
+    // 3. Buscar template e interpolar variáveis → campo mensagem
     const { data: templateRow } = await supabase
       .from('notification_templates')
       .select('template')
@@ -98,7 +106,7 @@ serve(async (req) => {
       );
     }
 
-    // 6. POST para BotConversa
+    // 4. POST para BotConversa
     const payload = { phone, mensagem, ...variables };
 
     const bcRes = await fetch(configRow.value, {
@@ -109,9 +117,10 @@ serve(async (req) => {
 
     const bcText = await bcRes.text();
 
-    return new Response(JSON.stringify({ ok: true, status: bcRes.status, response: bcText }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ ok: true, status: bcRes.status, response: bcText }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   } catch (err: any) {
     return new Response(JSON.stringify({ ok: false, error: err.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
