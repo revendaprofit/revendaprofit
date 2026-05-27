@@ -24,10 +24,46 @@ export default function AdminDashboard() {
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
 
+  // Notification templates
+  const EVENT_TYPES = [
+    { key: 'new_order',           label: 'Nova venda no catálogo',     emoji: '🛍️', vars: ['nome','valor','codigo'] },
+    { key: 'partner_order',       label: 'Venda via ponto parceiro',   emoji: '🤝', vars: ['nome','parceiro','valor','codigo'] },
+    { key: 'customer_signup',     label: 'Nova cliente cadastrada',    emoji: '👋', vars: ['nome','telefone'] },
+    { key: 'bag_accepted',        label: 'Malinha respondida',         emoji: '👜', vars: ['cliente','malinha','pecas_ficaram'] },
+    { key: 'bag_finalized',       label: 'Malinha finalizada',         emoji: '✅', vars: ['cliente','malinha','pecas_compradas','valor'] },
+    { key: 'birthday',            label: 'Aniversariante(s) hoje',     emoji: '🎂', vars: ['nomes','quantidade'] },
+    { key: 'overdue_installment', label: 'Parcelas vencidas',          emoji: '⚠️', vars: ['quantidade'] },
+  ];
+  const [templates, setTemplates] = useState<Record<string, string>>({});
+  const [savingTemplates, setSavingTemplates] = useState(false);
+
   useEffect(() => {
     supabase.from('system_config').select('value').eq('key', 'botconversa_webhook_url').single()
       .then(({ data }) => { if (data?.value) setWebhookUrl(data.value); });
+    supabase.from('notification_templates').select('event_type, template')
+      .then(({ data }) => {
+        if (data) {
+          const map: Record<string, string> = {};
+          data.forEach((row: any) => { map[row.event_type] = row.template; });
+          setTemplates(map);
+        }
+      });
   }, []);
+
+  const handleSaveTemplates = async () => {
+    setSavingTemplates(true);
+    const rows = Object.entries(templates).map(([event_type, template]) => ({
+      event_type,
+      template,
+      updated_at: new Date().toISOString(),
+    }));
+    const { error } = await supabase
+      .from('notification_templates')
+      .upsert(rows, { onConflict: 'event_type' });
+    setSavingTemplates(false);
+    if (error) toast.error('Erro ao salvar templates: ' + error.message);
+    else toast.success('Mensagens de notificação salvas!');
+  };
 
   const handleSaveWebhook = async () => {
     setSavingWebhook(true);
@@ -644,6 +680,63 @@ export default function AdminDashboard() {
           >
             {sendingTest ? 'Enviando...' : '⚡ Disparar Teste'}
           </Button>
+        </div>
+      </div>
+
+      {/* ── Mensagens de Notificação ── */}
+      <div className="bg-slate-900 rounded-2xl p-6 border border-slate-700 shadow-lg">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-500/20 p-2.5 rounded-xl border border-blue-500/30">
+              <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-white font-bold text-lg">Mensagens de Notificação</h2>
+              <p className="text-slate-400 text-sm">Texto enviado no campo <code className="text-blue-400">mensagem</code> para cada evento. Use <code className="text-blue-400">{'{{variavel}}'}</code> para inserir dados dinâmicos.</p>
+            </div>
+          </div>
+          <Button
+            onClick={handleSaveTemplates}
+            disabled={savingTemplates}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 shrink-0"
+          >
+            {savingTemplates ? 'Salvando...' : 'Salvar Tudo'}
+          </Button>
+        </div>
+
+        <div className="space-y-4">
+          {EVENT_TYPES.map(({ key, label, emoji, vars }) => (
+            <div key={key} className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white font-semibold text-sm">{emoji} {label}</span>
+                <div className="flex gap-1 flex-wrap justify-end">
+                  {vars.map(v => (
+                    <code
+                      key={v}
+                      className="text-[10px] bg-slate-700 text-green-400 px-1.5 py-0.5 rounded cursor-pointer hover:bg-slate-600 transition-colors"
+                      title="Clique para copiar"
+                      onClick={() => {
+                        const tag = `{{${v}}}`;
+                        navigator.clipboard.writeText(tag);
+                        toast.success(`${tag} copiado!`);
+                      }}
+                    >
+                      {`{{${v}}}`}
+                    </code>
+                  ))}
+                </div>
+              </div>
+              <textarea
+                value={templates[key] ?? ''}
+                onChange={e => setTemplates(prev => ({ ...prev, [key]: e.target.value }))}
+                rows={4}
+                placeholder={`Mensagem para o evento "${label}"...`}
+                className="w-full bg-slate-900 border border-slate-600 text-white placeholder:text-slate-500 rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:border-blue-500 transition-colors font-mono leading-relaxed"
+              />
+            </div>
+          ))}
         </div>
       </div>
 

@@ -83,8 +83,23 @@ serve(async (req) => {
     const rawPhone = settings.whatsapp.replace(/\D/g, '');
     const phone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`;
 
-    // 5. POST para BotConversa
-    const payload = { phone, ...variables };
+    // 5. Buscar template e interpolar variáveis → campo mensagem
+    const { data: templateRow } = await supabase
+      .from('notification_templates')
+      .select('template')
+      .eq('event_type', event_type)
+      .single();
+
+    let mensagem = '';
+    if (templateRow?.template) {
+      mensagem = templateRow.template.replace(
+        /\{\{(\w+)\}\}/g,
+        (_: string, key: string) => variables[key] ?? '',
+      );
+    }
+
+    // 6. POST para BotConversa
+    const payload = { phone, mensagem, ...variables };
 
     const bcRes = await fetch(configRow.value, {
       method: 'POST',
