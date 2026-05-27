@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
+import { notifyBotConversa } from "@/utils/notifyBotConversa"
 import { PackageOpen, CheckCircle, XCircle, ArrowLeftRight, ShoppingBag, AlertTriangle, ArrowRight } from "lucide-react"
 
 type Props = {
@@ -95,10 +96,19 @@ export default function ConsignmentSettlementSheet({ bagId, open, onOpenChange }
     onSuccess: (keptCount) => {
       queryClient.invalidateQueries({ queryKey: ['consignment_bags'] });
       onOpenChange(false);
-      
+
+      if (bag?.owner_id) {
+        notifyBotConversa('bag_finalized', bag.owner_id, {
+          cliente: bag.customer?.name || 'Cliente',
+          malinha: bag.name || bagId || '',
+          pecas_compradas: String(keptCount),
+          valor: `R$ ${keptItems.reduce((acc: number, item: any) => acc + (item.product?.sale_price * item.quantity || 0), 0).toFixed(2)}`,
+        });
+      }
+
       if (keptCount > 0) {
           toast.success("Enviando peças para o PDV...");
-          navigate('/pos'); // Rota correta do PDV
+          navigate('/pos');
       } else {
           toast.info("Malinha arquivada. (Nenhuma peça comprada).");
       }

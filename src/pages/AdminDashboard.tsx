@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { ShieldAlert, Users, Store, Factory, PlusCircle, Search, ShieldCheck, X, ShieldOff, AlertTriangle, Key, Copy, Loader2, Trash2 } from 'lucide-react';
+import { ShieldAlert, Users, Store, Factory, PlusCircle, Search, ShieldCheck, X, ShieldOff, AlertTriangle, Key, Copy, Loader2, Trash2, Webhook } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -15,9 +15,29 @@ export default function AdminDashboard() {
   const [modalRole, setModalRole] = useState('store_owner');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({ full_name: '', email: '', password: '' });
-  
+
   const [selectedEntity, setSelectedEntity] = useState<any>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // BotConversa webhook config
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [savingWebhook, setSavingWebhook] = useState(false);
+
+  useEffect(() => {
+    supabase.from('system_config').select('value').eq('key', 'botconversa_webhook_url').single()
+      .then(({ data }) => { if (data?.value) setWebhookUrl(data.value); });
+  }, []);
+
+  const handleSaveWebhook = async () => {
+    setSavingWebhook(true);
+    const { error } = await supabase.from('system_config').upsert(
+      { key: 'botconversa_webhook_url', value: webhookUrl.trim(), updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    );
+    setSavingWebhook(false);
+    if (error) toast.error('Erro ao salvar: ' + error.message);
+    else toast.success('URL do webhook BotConversa salva!');
+  };
   const [recoveryLink, setRecoveryLink] = useState<string | null>(null);
 
   const { data: profiles, isLoading } = useQuery({
@@ -551,6 +571,39 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* ── BotConversa Webhook Config ── */}
+      <div className="bg-slate-900 rounded-2xl p-6 border border-slate-700 shadow-lg">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="bg-green-500/20 p-2.5 rounded-xl border border-green-500/30">
+            <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-white font-bold text-lg">BotConversa — Webhook Global</h2>
+            <p className="text-slate-400 text-sm">URL usada para enviar notificações WhatsApp às lojistas</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <Input
+            value={webhookUrl}
+            onChange={e => setWebhookUrl(e.target.value)}
+            placeholder="https://backend.botconversa.com.br/api/v1/webhooks/catch/..."
+            className="flex-1 bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-green-500"
+          />
+          <Button
+            onClick={handleSaveWebhook}
+            disabled={savingWebhook || !webhookUrl.trim()}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 shrink-0"
+          >
+            {savingWebhook ? 'Salvando...' : 'Salvar'}
+          </Button>
+        </div>
+        <p className="text-slate-500 text-xs mt-2">
+          Configure este webhook no BotConversa. As variáveis enviadas no payload dependem do tipo de evento (ex: <code className="text-green-400">phone</code>, <code className="text-green-400">nome_cliente</code>, <code className="text-green-400">valor_pedido</code>).
+        </p>
+      </div>
 
     </div>
   );

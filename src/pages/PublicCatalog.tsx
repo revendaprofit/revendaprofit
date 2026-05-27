@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { consolidateProducts } from '@/utils/productConsolidator';
+import { notifyBotConversa } from '@/utils/notifyBotConversa';
 
 function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct }: any) {
   const rawInStockVariants = p.product_variants?.filter((v: any) => v.stock > 0) || [];
@@ -241,6 +242,7 @@ export default function PublicCatalog() {
   const [customerName, setCustomerName] = useState('');
   const [customerWhatsapp, setCustomerWhatsapp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [leadCaptured, setLeadCaptured] = useState(false);
 
   // VIP Deals password
   const [dealsUnlocked, setDealsUnlocked] = useState(false);
@@ -717,10 +719,17 @@ export default function PublicCatalog() {
       const wppLink = `https://wa.me/${store.whatsapp}?text=${encodedText}`;
       window.open(wppLink, '_blank');
 
+      notifyBotConversa('new_order', store.owner_id, {
+        nome: customerName,
+        valor: `R$ ${totalCart.toFixed(2)}`,
+        codigo: String(orderCode),
+      });
+
       setCart([]);
       setCheckoutModalOpen(false);
       setCustomerName('');
       setCustomerWhatsapp('');
+      setLeadCaptured(false);
       toast.success("Pedido gerado com sucesso! Redirecionando para o WhatsApp...");
     } catch (err) {
       toast.error('Ocorreu um erro ao processar o pedido. Tente novamente.');
@@ -1119,10 +1128,24 @@ export default function PublicCatalog() {
              
              <div>
                 <label className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 block">Seu WhatsApp</label>
-                <Input 
-                  placeholder="(00) 00000-0000" 
+                <Input
+                  placeholder="(00) 00000-0000"
                   value={customerWhatsapp}
                   onChange={e => setCustomerWhatsapp(e.target.value)}
+                  onBlur={async () => {
+                    if (!leadCaptured && customerName.trim() && customerWhatsapp.trim() && store?.owner_id) {
+                      setLeadCaptured(true);
+                      await supabase.rpc('register_catalog_lead', {
+                        p_store_id: store.owner_id,
+                        p_name: customerName.trim(),
+                        p_phone: customerWhatsapp.trim(),
+                      });
+                      notifyBotConversa('customer_signup', store.owner_id, {
+                        nome: customerName.trim(),
+                        telefone: customerWhatsapp.trim(),
+                      });
+                    }
+                  }}
                   className="h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
                 />
              </div>

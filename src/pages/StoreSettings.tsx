@@ -28,7 +28,14 @@ export default function StoreSettings() {
     featured_product_ids: [] as string[],
     meta_pixel_id: '',
     ga4_measurement_id: '',
-    deals_password: ''
+    deals_password: '',
+    notify_new_order: true,
+    notify_partner_order: true,
+    notify_customer_signup: true,
+    notify_bag_accepted: true,
+    notify_bag_finalized: true,
+    notify_birthday: true,
+    notify_overdue_installment: true,
   });
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [faviconFile, setFaviconFile] = useState<File | null>(null);
@@ -69,7 +76,14 @@ export default function StoreSettings() {
         featured_product_ids: settings.featured_product_ids || [],
         meta_pixel_id: settings.meta_pixel_id || '',
         ga4_measurement_id: settings.ga4_measurement_id || '',
-        deals_password: settings.deals_password || ''
+        deals_password: settings.deals_password || '',
+        notify_new_order: (settings as any).notify_new_order ?? true,
+        notify_partner_order: (settings as any).notify_partner_order ?? true,
+        notify_customer_signup: (settings as any).notify_customer_signup ?? true,
+        notify_bag_accepted: (settings as any).notify_bag_accepted ?? true,
+        notify_bag_finalized: (settings as any).notify_bag_finalized ?? true,
+        notify_birthday: (settings as any).notify_birthday ?? true,
+        notify_overdue_installment: (settings as any).notify_overdue_installment ?? true,
       });
     }
   }, [settings]);
@@ -205,7 +219,14 @@ export default function StoreSettings() {
         footer_text: formData.footer_text,
         product_layout: formData.product_layout,
         featured_product_ids: formData.featured_product_ids,
-        deals_password: formData.deals_password || null
+        deals_password: formData.deals_password || null,
+        notify_new_order: formData.notify_new_order,
+        notify_partner_order: formData.notify_partner_order,
+        notify_customer_signup: formData.notify_customer_signup,
+        notify_bag_accepted: formData.notify_bag_accepted,
+        notify_bag_finalized: formData.notify_bag_finalized,
+        notify_birthday: formData.notify_birthday,
+        notify_overdue_installment: formData.notify_overdue_installment,
       };
 
       if (settings?.id) {
@@ -751,6 +772,50 @@ export default function StoreSettings() {
       )}
 
 
+
+      {/* Notificações via WhatsApp (BotConversa) */}
+      {!isLoading && (
+        <div className="bg-card border rounded-xl shadow-sm">
+          <div className="p-5 border-b bg-muted/20">
+            <div className="flex items-center gap-2 font-semibold">
+              <svg className="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Notificações via WhatsApp
+            </div>
+            <p className="text-xs text-muted-foreground font-normal mt-1">
+              Escolha quais eventos enviam uma mensagem automática para o seu WhatsApp cadastrado.
+            </p>
+          </div>
+          <div className="p-5 space-y-3">
+            {[
+              { key: 'notify_new_order',           label: 'Nova venda na loja online',              desc: 'Receba aviso quando um cliente fechar um pedido no catálogo.' },
+              { key: 'notify_partner_order',        label: 'Nova venda em ponto parceiro',           desc: 'Receba aviso quando um pedido for feito na arara de um parceiro.' },
+              { key: 'notify_customer_signup',      label: 'Cadastro sem pedido (lead)',             desc: 'Cliente preencheu nome e WhatsApp mas não finalizou o pedido.' },
+              { key: 'notify_bag_accepted',         label: 'Aceite de malinha consignada',           desc: 'Cliente respondeu quais peças ficou/devolveu na malinha.' },
+              { key: 'notify_bag_finalized',        label: 'Finalização de malinha consignada',      desc: 'Malinha foi fechada pelo administrador.' },
+              { key: 'notify_birthday',             label: 'Aniversariantes do dia',                 desc: 'Receba aviso diário com clientes que fazem aniversário hoje.' },
+              { key: 'notify_overdue_installment',  label: 'Parcelas vencidas',                      desc: 'Receba aviso diário quando houver parcelas em atraso.' },
+            ].map(({ key, label, desc }) => (
+              <div key={key} className="flex items-center justify-between p-3 border rounded-lg hover:border-primary/30 transition-colors">
+                <div>
+                  <p className="font-semibold text-sm">{label}</p>
+                  <p className="text-xs text-muted-foreground">{desc}</p>
+                </div>
+                <Switch
+                  checked={(formData as any)[key] ?? true}
+                  onChange={v => setFormData({ ...formData, [key]: v } as any)}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="p-5 bg-muted/30 border-t flex justify-end">
+            <Button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending} className="w-full md:w-auto">
+              Salvar Preferências
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Modal Pagamento */}
       <Dialog open={pmModalOpen} onOpenChange={setPmModalOpen}>

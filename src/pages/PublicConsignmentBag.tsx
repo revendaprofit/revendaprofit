@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client"
 import { Briefcase, CheckCircle, XCircle, ChevronRight, PackageOpen, Info, ArrowLeftRight, PaintBucket } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
+import { notifyBotConversa } from "@/utils/notifyBotConversa"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 export default function PublicConsignmentBag() {
@@ -97,6 +98,13 @@ export default function PublicConsignmentBag() {
     onSuccess: () => {
       toast.success("Ótima escolha! Sua resposta foi enviada para a loja.")
       queryClient.invalidateQueries({ queryKey: ['public_bag', bag_id] })
+      if (bag?.owner_id) {
+        notifyBotConversa('bag_accepted', bag.owner_id, {
+          cliente: bag.customer_name || 'Cliente',
+          malinha: bag.name || bag_id || '',
+          pecas_ficaram: String(Object.values(decisions).filter(d => d === 'kept').length),
+        });
+      }
     },
     onError: (err: any) => {
       toast.error(err.message || "Erro ao enviar resposta.")

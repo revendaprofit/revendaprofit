@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Store, ShoppingBag, MapPin, Search, ArrowRight, Minus, Plus, ShoppingCart, Loader2, AlertCircle, PackagePlus } from 'lucide-react';
 import { toast } from 'sonner';
+import { notifyBotConversa } from '@/utils/notifyBotConversa';
 
 export default function PublicPartnerCatalog() {
   const { slug } = useParams();
@@ -14,6 +15,7 @@ export default function PublicPartnerCatalog() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [leadCaptured, setLeadCaptured] = useState(false);
 
   // Fetch Partner Info
   const { data: partner, isLoading: loadingPartner, error: partnerError } = useQuery({
@@ -154,9 +156,17 @@ export default function PublicPartnerCatalog() {
       // But wait! Partner point stock should be reserved? 
       // For now, we follow standard store_orders logic where stock is decremented at completion in POS.
 
+      notifyBotConversa('partner_order', partner.owner_id, {
+        nome: customerName,
+        parceiro: partner.name,
+        valor: `R$ ${cartTotal.toFixed(2)}`,
+        codigo: String(orderCode),
+      });
+
       toast.success('Pedido Enviado para a Loja!', { duration: 5000 });
       setCart([]);
       setIsCartOpen(false);
+      setLeadCaptured(false);
       
       // Enviar pro whatsapp do parceiro!
       if (partner.phone) {
@@ -314,7 +324,26 @@ export default function PublicPartnerCatalog() {
                         <Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Ex: João Silva" className="mb-3 bg-slate-50" />
                         
                         <label className="text-sm font-bold block mb-1">Seu WhatsApp *</label>
-                        <Input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="(DD) 99999-9999" className="mb-6 bg-slate-50" />
+                        <Input
+                          value={customerPhone}
+                          onChange={e => setCustomerPhone(e.target.value)}
+                          onBlur={async () => {
+                            if (!leadCaptured && customerName.trim() && customerPhone.trim() && partner?.owner_id) {
+                              setLeadCaptured(true);
+                              await supabase.rpc('register_catalog_lead', {
+                                p_store_id: partner.owner_id,
+                                p_name: customerName.trim(),
+                                p_phone: customerPhone.trim(),
+                              });
+                              notifyBotConversa('customer_signup', partner.owner_id, {
+                                nome: customerName.trim(),
+                                telefone: customerPhone.trim(),
+                              });
+                            }
+                          }}
+                          placeholder="(DD) 99999-9999"
+                          className="mb-6 bg-slate-50"
+                        />
 
                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
                            <div className="flex justify-between items-center text-slate-500 text-sm mb-1">

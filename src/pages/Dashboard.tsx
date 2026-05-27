@@ -1,6 +1,8 @@
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { notifyBotConversa } from "@/utils/notifyBotConversa";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { ArrowUpRight, TrendingUp, Package, Users, ShoppingBag, Bell, Gift, Clock, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -173,6 +175,30 @@ export default function Dashboard() {
       };
     }
   });
+
+  // Fire periodic BotConversa notifications once per calendar day
+  useEffect(() => {
+    if (!metrics || !user?.id) return;
+    const today = new Date().toISOString().split('T')[0];
+    const storageKey = `rp_notif_sent_${user.id}_${today}`;
+    if (localStorage.getItem(storageKey)) return;
+    localStorage.setItem(storageKey, '1');
+
+    const birthdayAlert = metrics.alerts.find((a: any) => a.type === 'birthday');
+    if (birthdayAlert) {
+      notifyBotConversa('birthday', user.id, {
+        nomes: birthdayAlert.desc,
+        quantidade: String(birthdayAlert.title.match(/\d+/)?.[0] ?? '1'),
+      });
+    }
+
+    const overdueAlert = metrics.alerts.find((a: any) => a.type === 'danger' && a.link === '/installments');
+    if (overdueAlert) {
+      notifyBotConversa('overdue_installment', user.id, {
+        quantidade: String(overdueAlert.title.match(/\d+/)?.[0] ?? '1'),
+      });
+    }
+  }, [metrics, user?.id]);
 
   if (isLoading) {
     return <div className="p-8 text-center text-muted-foreground animate-pulse">Carregando métricas executivas...</div>;
