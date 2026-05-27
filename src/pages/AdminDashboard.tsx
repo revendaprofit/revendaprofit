@@ -86,6 +86,7 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone:           '5511999999999',
+          mensagem:        '🧪 Mensagem de teste do Revenda Profit! Se você está vendo isso, o webhook está funcionando corretamente.',
           nome:            'João Silva',
           valor:           'R$ 250,00',
           codigo:          'PED-0001',
