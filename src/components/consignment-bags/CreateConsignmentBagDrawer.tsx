@@ -240,9 +240,9 @@ export default function CreateConsignmentBagDrawer({ open, onOpenChange }: Creat
                         ))}
                       </div>
                     ) : (
-                      <Button size="sm" variant="outline" className="w-full h-7 mt-1 text-xs" onClick={() => addItemToCart(p)}>
-                        Adicionar <Plus className="w-3 h-3 ml-1" />
-                      </Button>
+                      <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+                        ⚠️ Sem variantes cadastradas — adicione tamanhos no Estoque
+                      </p>
                     )}
                   </div>
                 ))}
