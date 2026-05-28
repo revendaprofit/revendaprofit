@@ -1145,15 +1145,30 @@ export default function PublicCatalog() {
                       <div className="flex flex-wrap gap-2">
                         {modalInStock.map((v: any) => {
                           const qtyInCart = cart.find(c => c.variant_id === v.id)?.qty || 0;
+                          const isInConsignment = inConsignmentVariantIds.has(v.id);
                           return (
-                            <button 
+                            <button
                               key={v.id}
-                              onClick={() => handleAddToCart(selectedProduct, v)}
-                              disabled={qtyInCart >= v.stock}
-                              className="text-sm font-medium px-4 py-2 rounded-lg border bg-white flex items-center justify-center hover:border-primary hover:text-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:border-primary focus:ring-1 focus:ring-primary"
+                              onClick={() => {
+                                if (isInConsignment) {
+                                  setSelectedProduct(null);
+                                  handleWaitlistOpen(selectedProduct, v);
+                                } else {
+                                  handleAddToCart(selectedProduct, v);
+                                }
+                              }}
+                              disabled={!isInConsignment && qtyInCart >= v.stock}
+                              className={`text-sm font-medium px-4 py-2 rounded-lg border flex items-center justify-center transition-all shadow-sm ${
+                                isInConsignment
+                                  ? 'border-yellow-400 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                                  : 'bg-white hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed focus:border-primary focus:ring-1 focus:ring-primary'
+                              }`}
+                              title={isInConsignment ? 'Em malinha — entrar na fila de espera' : undefined}
                             >
+                              {isInConsignment && <Clock className="h-3.5 w-3.5 mr-1.5 text-yellow-500" />}
                               {v.size} {v.color && `- ${v.color}`}
-                              {qtyInCart > 0 && <span className="ml-2 bg-primary text-primary-foreground text-[10px] h-5 w-5 rounded-full flex items-center justify-center">{qtyInCart}</span>}
+                              {isInConsignment && <span className="ml-1.5 text-[10px] font-bold">Fila</span>}
+                              {!isInConsignment && qtyInCart > 0 && <span className="ml-2 bg-primary text-primary-foreground text-[10px] h-5 w-5 rounded-full flex items-center justify-center">{qtyInCart}</span>}
                             </button>
                           )
                         })}
