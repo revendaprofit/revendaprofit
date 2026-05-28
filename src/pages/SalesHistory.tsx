@@ -128,6 +128,25 @@ export default function SalesHistory() {
         .update({ status: 'cancelled' })
         .eq('sale_id', id)
         .eq('status', 'pending');
+      // Limpar acerto de parceria: busca o partnership_order desta venda
+      const { data: pOrders } = await supabase
+        .from('partnership_orders')
+        .select('id')
+        .eq('sale_id', id);
+      if (pOrders && pOrders.length > 0) {
+        const pOrderIds = pOrders.map((o: any) => o.id);
+        // Deleta settlements abertos vinculados a esses partnership_orders
+        await supabase
+          .from('partnership_settlements')
+          .delete()
+          .in('partnership_order_id', pOrderIds)
+          .eq('status', 'open');
+        // Marca os partnership_orders como cancelados
+        await supabase
+          .from('partnership_orders')
+          .update({ status: 'cancelled' })
+          .in('id', pOrderIds);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales-history'] });
