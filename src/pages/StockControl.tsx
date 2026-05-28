@@ -96,6 +96,10 @@ export default function StockControl() {
           
           if (filters.stockStatus === 'out_of_stock') result = result.filter((r:any) => r.total_stock === 0);
           else if (filters.stockStatus === 'in_stock') result = result.filter((r:any) => r.total_stock > 0);
+          if (filters.minPrice) result = result.filter((r:any) => r.sale_price >= parseFloat(filters.minPrice));
+          if (filters.maxPrice) result = result.filter((r:any) => r.sale_price <= parseFloat(filters.maxPrice));
+          if (filters.mediaStatus === 'has_media') result = result.filter((r:any) => !!r.image_url);
+          if (filters.mediaStatus === 'no_photo') result = result.filter((r:any) => !r.image_url);
           return result;
       }
 
@@ -246,7 +250,7 @@ export default function StockControl() {
       </div>
 
       <div className="flex flex-col sm:flex-row justify-between gap-4 bg-muted/30 p-4 rounded-lg items-center">
-        <Tabs value={activeTab} onValueChange={(v: any) => { setActiveTab(v); setSelectedIds([]); }}>
+        <Tabs value={activeTab} onValueChange={(v: any) => { setActiveTab(v); setSelectedIds([]); setSearch(''); setFilters({ categoryId: 'all', supplierId: 'all', subcategoryId: 'all', stockStatus: 'all', minPrice: '', maxPrice: '', filterModel: '', filterColor: '', ncm: '', ean: '', mediaStatus: 'all' }); }}>
           <TabsList>
             <TabsTrigger value="local">Meu Estoque</TabsTrigger>
             <TabsTrigger value="p2p">Estoque Parceiro</TabsTrigger>
