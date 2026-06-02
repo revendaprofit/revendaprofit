@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Store, Camera, Link as LinkIcon, Smartphone, CreditCard, Plus, Trash2, Edit2, CalendarClock, Palette, Image as ImageIcon, ExternalLink, Globe, Megaphone, Type, LayoutGrid, List, Star, ShoppingBag, Flame, Lock } from 'lucide-react';
+import { Store, Camera, Link as LinkIcon, Smartphone, CreditCard, Plus, Trash2, Edit2, CalendarClock, Palette, Image as ImageIcon, ExternalLink, Globe, Megaphone, Type, LayoutGrid, List, Star, ShoppingBag, Flame, Lock, Power } from 'lucide-react';
 import { toast } from 'sonner';
 
 const Switch = ({ checked, onChange }: { checked: boolean, onChange: (v: boolean) => void }) => (
@@ -36,6 +36,7 @@ export default function StoreSettings() {
     notify_bag_finalized: true,
     notify_birthday: true,
     notify_overdue_installment: true,
+    is_store_active: true,
   });
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [faviconFile, setFaviconFile] = useState<File | null>(null);
@@ -84,6 +85,7 @@ export default function StoreSettings() {
         notify_bag_finalized: (settings as any).notify_bag_finalized ?? true,
         notify_birthday: (settings as any).notify_birthday ?? true,
         notify_overdue_installment: (settings as any).notify_overdue_installment ?? true,
+        is_store_active: (settings as any).is_store_active ?? true,
       });
     }
   }, [settings]);
@@ -227,6 +229,7 @@ export default function StoreSettings() {
         notify_bag_finalized: formData.notify_bag_finalized,
         notify_birthday: formData.notify_birthday,
         notify_overdue_installment: formData.notify_overdue_installment,
+        is_store_active: formData.is_store_active,
       };
 
       if (settings?.id) {
@@ -344,6 +347,33 @@ export default function StoreSettings() {
           <div className="bg-card border rounded-xl overflow-hidden shadow-sm flex flex-col">
             <div className="p-5 border-b bg-muted/20 font-semibold bg-primary/5 text-primary border-primary/20 flex items-center gap-2">
               <LinkIcon className="h-4 w-4" /> Seu Catálogo Online
+              <div className="ml-auto flex items-center gap-2">
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${formData.is_store_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                  {formData.is_store_active ? 'Online' : 'Offline'}
+                </span>
+                <button
+                  type="button"
+                  title={formData.is_store_active ? 'Desativar loja' : 'Ativar loja'}
+                  onClick={async () => {
+                    const newVal = !formData.is_store_active;
+                    setFormData(prev => ({ ...prev, is_store_active: newVal }));
+                    if (settings?.id) {
+                      const { error } = await supabase.from('store_settings').update({ is_store_active: newVal }).eq('id', settings.id);
+                      if (error) {
+                        toast.error('Erro ao atualizar status da loja');
+                        setFormData(prev => ({ ...prev, is_store_active: !newVal }));
+                      } else {
+                        toast.success(newVal ? 'Loja ativada!' : 'Loja desativada!');
+                        queryClient.invalidateQueries({ queryKey: ['store-settings'] });
+                      }
+                    }
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none ${formData.is_store_active ? 'bg-green-500' : 'bg-gray-300'}`}
+                >
+                  <Power className={`absolute left-1 h-3 w-3 transition-all ${formData.is_store_active ? 'text-white opacity-100' : 'text-gray-500 opacity-60'}`} />
+                  <span className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform ${formData.is_store_active ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
             </div>
             <div className="p-5 space-y-5 flex-1">
               
