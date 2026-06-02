@@ -1,14 +1,82 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star, Sparkles, Flame, Lock, Clock, Bell } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Send, AlertCircle, Camera, Link as LinkIcon, X, Star, Sparkles, Flame, Lock, Clock, Bell, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { consolidateProducts } from '@/utils/productConsolidator';
 import { notifyBotConversa } from '@/utils/notifyBotConversa';
+
+function Lightbox({ images, initialIndex, onClose }: { images: string[]; initialIndex: number; onClose: () => void }) {
+  const [index, setIndex] = useState(initialIndex);
+
+  const prev = useCallback(() => setIndex(i => (i - 1 + images.length) % images.length), [images.length]);
+  const next = useCallback(() => setIndex(i => (i + 1) % images.length), [images.length]);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft') prev();
+      if (e.key === 'ArrowRight') next();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose, prev, next]);
+
+  const current = images[index];
+  const isVideo = typeof current === 'string' && (current.includes('.mp4') || current.includes('.webm') || current.includes('.mov'));
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] bg-black flex items-center justify-center"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white/80 hover:text-white bg-black/40 rounded-full p-2 z-10"
+      >
+        <X className="h-6 w-6" />
+      </button>
+
+      {images.length > 1 && (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); prev(); }}
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white bg-black/40 rounded-full p-2 z-10"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); next(); }}
+            className="absolute right-14 top-1/2 -translate-y-1/2 text-white/80 hover:text-white bg-black/40 rounded-full p-2 z-10"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+          <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 z-10">
+            {images.map((_, i) => (
+              <button
+                key={i}
+                onClick={(e) => { e.stopPropagation(); setIndex(i); }}
+                className={`h-1.5 rounded-full transition-all ${i === index ? 'w-6 bg-white' : 'w-1.5 bg-white/40'}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="w-full h-full flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
+        {isVideo ? (
+          <video src={current} className="max-w-full max-h-full object-contain" autoPlay controls playsInline />
+        ) : (
+          <img src={current} alt="" className="max-w-full max-h-full object-contain select-none" draggable={false} />
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct, inConsignmentVariantIds, onWaitlist }: any) {
   const rawInStockVariants = p.product_variants?.filter((v: any) => v.stock > 0) || [];
@@ -25,9 +93,11 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct, inC
   const hasAnyDeal = inStockVariants.some((v: any) => v.sale_price && parseFloat(v.sale_price) > 0 && parseFloat(v.sale_price) < p.sale_price);
   // Get the lowest variant price for display
   const lowestVariantPrice = hasAnyDeal ? Math.min(...inStockVariants.filter((v: any) => v.sale_price && parseFloat(v.sale_price) > 0).map((v: any) => parseFloat(v.sale_price))) : null;
-  
+
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const isFeatured = store?.featured_product_ids?.includes(p.id);
+  const imageOnlyMedia = mediaList.filter((m: string) => !m.includes('.mp4') && !m.includes('.webm') && !m.includes('.mov'));
 
   const activeMedia = mediaList[currentMediaIndex] || p.image_url;
   const isVideo = activeMedia && typeof activeMedia === 'string' && (activeMedia.includes('.mp4') || activeMedia.includes('.webm') || activeMedia.includes('.mov'));
@@ -36,9 +106,14 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct, inC
 
   return (
     <div className={`rounded-2xl overflow-hidden shadow-sm border hover:shadow-md transition-shadow group flex ${isList ? 'flex-row min-h-[128px] md:min-h-[160px]' : 'flex-col'}`} style={{ backgroundColor: store.card_bg_color || '#ffffff', borderColor: 'rgba(0,0,0,0.05)' }}>
-      <div 
-        onClick={() => onSelectProduct(p)}
-        className={`${isList ? 'w-24 md:w-32 shrink-0' : 'aspect-[4/5]'} bg-gray-100 relative overflow-hidden flex items-center justify-center cursor-pointer`}
+      {lightboxIndex !== null && imageOnlyMedia.length > 0 && (
+        <Lightbox images={imageOnlyMedia} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
+      )}
+      <div
+        onClick={() => {
+          if (imageOnlyMedia.length > 0) setLightboxIndex(currentMediaIndex < imageOnlyMedia.length ? currentMediaIndex : 0);
+        }}
+        className={`${isList ? 'w-24 md:w-32 shrink-0' : 'aspect-[4/5]'} bg-gray-100 relative overflow-hidden flex items-center justify-center cursor-zoom-in group/img`}
       >
         {activeMedia ? (
           isVideo ? (
@@ -113,7 +188,10 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct, inC
       
       <div className={`p-4 flex flex-col flex-1 ${isList ? 'justify-center overflow-y-auto custom-scrollbar' : ''}`}>
         {!isList && <p className="text-[10px] sm:text-xs text-primary font-bold mb-1 opacity-80 uppercase tracking-wider">{(p.categories as any)?.name || (Array.isArray(p.categories) && (p.categories as any)[0]?.name) || 'Geral'}</p>}
-        <h3 className={`font-semibold text-gray-900 leading-tight mb-2 ${isList ? 'line-clamp-1 text-sm md:text-base' : 'line-clamp-2 md:text-lg'} font-store-title`}>{p.name}</h3>
+        <h3
+          onClick={() => onSelectProduct(p)}
+          className={`font-semibold text-gray-900 leading-tight mb-2 ${isList ? 'line-clamp-1 text-sm md:text-base' : 'line-clamp-2 md:text-lg'} font-store-title cursor-pointer hover:text-primary transition-colors`}
+        >{p.name}</h3>
         <div className="mt-auto">
           {hasAnyDeal && lowestVariantPrice ? (
             <div className="mb-3">
