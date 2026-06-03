@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Receipt, Search, XCircle, CreditCard, Banknote, UndoIcon, Eye, Filter, CheckCircle, Store, Trash2 } from 'lucide-react';
+import { Receipt, Search, XCircle, CreditCard, Banknote, UndoIcon, Eye, Filter, CheckCircle, Store, Trash2, AlertTriangle, ShieldCheck, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -53,6 +53,10 @@ export default function SalesHistory() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'cancel' | 'complete' | 'reopenpos' | 'hard_delete' | null>(null);
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'vendas' | 'auditoria'>('vendas');
+  const [selectedAuditIds, setSelectedAuditIds] = useState<Set<string>>(new Set());
+  const [confirmFixOpen, setConfirmFixOpen] = useState(false);
+  const [fixingAll, setFixingAll] = useState(false);
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -243,6 +247,100 @@ export default function SalesHistory() {
     return Array.from(methods).join(' + ');
   };
 
+  // Mutation: corrige o histórico financeiro dos itens selecionados
+  const fixPriceMutation = useMutation({
+    mutationFn: async (itemsToFix: any[]) => {
+      // Agrupar por sale_id para recalcular total_amount de cada venda
+      const bySaleId: Record<string, { saleItemId: string; correctPrice: number; qty: number; oldTotal: number; newTotal: number }[]> = {};
+
+      for (const item of itemsToFix) {
+        const correctPrice = parseFloat(item.product_variants?.sale_price);
+        const newTotal = correctPrice * item.quantity;
+        const oldTotal = Number(item.unit_price) * item.quantity;
+
+        // 1. Atualiza unit_price e total_price do sale_item
+        const { error: itemErr } = await supabase
+          .from('sale_items')
+          .update({ unit_price: correctPrice, total_price: newTotal })
+          .eq('id', item.id);
+        if (itemErr) throw new Error(`Erro ao corrigir item ${item.id}: ${itemErr.message}`);
+
+        if (!bySaleId[item.sale_id]) bySaleId[item.sale_id] = [];
+        bySaleId[item.sale_id].push({ saleItemId: item.id, correctPrice, qty: item.quantity, oldTotal, newTotal });
+      }
+
+      // 2. Para cada venda afetada, recalcular total_amount somando todos os itens
+      for (const [saleId, fixedItems] of Object.entries(bySaleId)) {
+        const { data: allItems, error: fetchErr } = await supabase
+          .from('sale_items')
+          .select('total_price')
+          .eq('sale_id', saleId);
+        if (fetchErr) throw new Error(`Erro ao buscar itens da venda ${saleId}: ${fetchErr.message}`);
+
+        const newTotalAmount = (allItems || []).reduce((acc: number, si: any) => acc + Number(si.total_price), 0);
+        const { error: saleErr } = await supabase
+          .from('sales')
+          .update({ total_amount: newTotalAmount })
+          .eq('id', saleId);
+        if (saleErr) throw new Error(`Erro ao atualizar venda ${saleId}: ${saleErr.message}`);
+
+        // 3. Ajustar partnership_settlements abertos vinculados a esta venda
+        for (const fi of fixedItems) {
+          const { data: pOrders } = await supabase
+            .from('partnership_orders')
+            .select('id, sale_price')
+            .eq('sale_id', saleId);
+
+          if (pOrders && pOrders.length > 0) {
+            for (const po of pOrders) {
+              const oldSalePrice = Number(po.sale_price || fi.correctPrice);
+              if (oldSalePrice === 0) continue;
+              const { data: settlements } = await supabase
+                .from('partnership_settlements')
+                .select('id, profit_slice, cost_slice, fee_slice')
+                .eq('partnership_order_id', po.id)
+                .eq('status', 'open');
+
+              if (settlements && settlements.length > 0) {
+                // Atualiza também o sale_price no partnership_order
+                await supabase
+                  .from('partnership_orders')
+                  .update({ sale_price: fi.correctPrice })
+                  .eq('id', po.id);
+
+                for (const s of settlements) {
+                  const ratio = fi.correctPrice / oldSalePrice;
+                  const newProfitSlice = Number(s.profit_slice) * ratio;
+                  const newAmountOwed = Math.max(0, Number(s.cost_slice) + newProfitSlice - Number(s.fee_slice));
+                  await supabase
+                    .from('partnership_settlements')
+                    .update({ profit_slice: newProfitSlice, amount_owed: newAmountOwed })
+                    .eq('id', s.id);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return Object.keys(bySaleId).length;
+    },
+    onSuccess: (count) => {
+      toast.success(`✅ ${count} venda(s) corrigida(s) com sucesso no histórico financeiro!`);
+      setSelectedAuditIds(new Set());
+      setConfirmFixOpen(false);
+      setFixingAll(false);
+      queryClient.invalidateQueries({ queryKey: ['audit-price-discrepancy'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-history'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+    },
+    onError: (e: any) => {
+      toast.error('Erro ao corrigir: ' + e.message);
+      setConfirmFixOpen(false);
+      setFixingAll(false);
+    }
+  });
+
   const getStatusBadge = (status: string) => {
     if (status === 'completed' || status === 'p2p_settlement') {
       return <span className="px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-bold uppercase tracking-wide">Concluída</span>;
@@ -321,6 +419,45 @@ export default function SalesHistory() {
   }, 0);
   const sumLucroLiquido = sumVendas - sumCustos - validSales.reduce((a, s) => a + (Number(s.payment_fee_amount) || 0) + (Number(s.payment_fee_amount_2) || 0) + (s.shipping_payer === 'seller' ? (Number(s.shipping_cost) || 0) : 0), 0); const margemLucro = sumVendas > 0 ? (sumLucroLiquido / sumVendas) * 100 : 0;
 
+  // Auditoria: busca itens de venda onde o unit_price diverge do sale_price da variante
+  // (indica possível impacto do bug de preço promocional)
+  const { data: auditItems = [], isLoading: loadingAudit, refetch: refetchAudit } = useQuery({
+    queryKey: ['audit-price-discrepancy'],
+    enabled: activeTab === 'auditoria',
+    queryFn: async () => {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) return [];
+      // Busca sale_items que têm variante com sale_price preenchido e menor que o unit_price registrado
+      const { data, error } = await supabase
+        .from('sale_items')
+        .select(`
+          id, sale_id, product_id, variant_id, quantity, unit_price, total_price,
+          products ( name, sale_price ),
+          product_variants ( size, color, sale_price ),
+          sales!inner ( owner_id, created_at, status, sale_origin, customers ( name ) )
+        `)
+        .eq('sales.owner_id', user.id)
+        .neq('sales.status', 'cancelled')
+        .not('variant_id', 'is', null)
+        .order('sales(created_at)', { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      // Filtrar somente os que têm discrepância: variante tem preço promocional diferente do registrado
+      return (data || []).filter((item: any) => {
+        const variantPromoPrice = item.product_variants?.sale_price
+          ? parseFloat(item.product_variants.sale_price)
+          : null;
+        if (!variantPromoPrice || variantPromoPrice <= 0) return false;
+        const productNormalPrice = parseFloat(item.products?.sale_price || 0);
+        // Só é promoção se o preço da variante for MENOR que o produto
+        if (variantPromoPrice >= productNormalPrice) return false;
+        // Há discrepância se o unit_price registrado NÃO é o preço promocional
+        return Math.abs(Number(item.unit_price) - variantPromoPrice) > 0.01;
+      });
+    }
+  });
+
+
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div>
@@ -330,6 +467,37 @@ export default function SalesHistory() {
         <p className="text-sm text-muted-foreground mt-1">Acompanhe seu faturamento, custos e lucro dos filtros selecionados.</p>
       </div>
 
+      {/* Abas de Navegação */}
+      <div className="flex gap-2 border-b pb-0">
+        <button
+          id="tab-vendas"
+          onClick={() => setActiveTab('vendas')}
+          className={`px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors ${
+            activeTab === 'vendas'
+              ? 'border-primary text-primary bg-primary/5'
+              : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+          }`}
+        >
+          <Receipt className="inline h-4 w-4 mr-1.5 -mt-0.5" />
+          Vendas
+        </button>
+        <button
+          id="tab-auditoria"
+          onClick={() => setActiveTab('auditoria')}
+          className={`px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors flex items-center gap-1.5 ${
+            activeTab === 'auditoria'
+              ? 'border-amber-500 text-amber-700 bg-amber-50'
+              : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+          }`}
+        >
+          <AlertTriangle className="h-4 w-4" />
+          Auditoria de Preços
+        </button>
+      </div>
+
+
+      {activeTab === 'vendas' && (
+        <>
       {/* Mini Relatório Dinâmico */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-card border rounded-xl p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
@@ -477,6 +645,242 @@ export default function SalesHistory() {
           </TableBody>
         </Table>
       </div>
+
+        </>
+      )}
+
+      {activeTab === 'auditoria' && (
+        <div className="space-y-4">
+          {/* Informações sobre a auditoria */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row gap-4 items-start">
+            <div className="bg-amber-100 text-amber-600 p-3 rounded-full shrink-0">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-amber-900 mb-1">Auditoria de Preços Promocionais</h3>
+              <p className="text-sm text-amber-800">
+                Esta tela detecta automaticamente vendas onde o preço registrado <strong>não corresponde</strong> ao preço promocional da variante.
+                Isso pode ter ocorrido antes da correção do sistema. Use esta auditoria para identificar vendas que podem ter sido faturadas incorretamente.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="text-xs bg-amber-200 text-amber-900 px-2 py-1 rounded-full font-semibold">✅ Correção aplicada: novas vendas não serão afetadas</span>
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-semibold">🔍 Mostrando as últimas 500 peças vendidas</span>
+              </div>
+            </div>
+            <button
+              id="btn-refresh-audit"
+              onClick={() => refetchAudit()}
+              className="shrink-0 flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-2 rounded-lg transition-colors"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Atualizar
+            </button>
+          </div>
+
+          {loadingAudit ? (
+            <div className="text-center py-10 text-muted-foreground">Analisando vendas...</div>
+          ) : auditItems.length === 0 ? (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-8 flex flex-col items-center text-center">
+              <ShieldCheck className="h-12 w-12 text-emerald-500 mb-3" />
+              <h3 className="font-bold text-emerald-900 text-lg mb-1">Nenhuma discrepância encontrada!</h3>
+              <p className="text-sm text-emerald-700 max-w-sm">
+                Todas as vendas analisadas foram registradas com o preço correto da variante.
+                Ou ainda não há variantes com preço promocional cadastrado.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border bg-card overflow-x-auto">
+              <div className="p-4 bg-amber-50 border-b flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                <span className="font-semibold text-amber-900 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  {auditItems.length} item(ns) com discrepância de preço encontrado(s)
+                </span>
+                <div className="flex gap-2 flex-wrap">
+                  {selectedAuditIds.size > 0 && (
+                    <button
+                      id="btn-fix-selected"
+                      onClick={() => { setFixingAll(false); setConfirmFixOpen(true); }}
+                      className="flex items-center gap-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 px-3 py-2 rounded-lg transition-colors"
+                      disabled={fixPriceMutation.isPending}
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      Corrigir Selecionados ({selectedAuditIds.size})
+                    </button>
+                  )}
+                  <button
+                    id="btn-fix-all"
+                    onClick={() => { setFixingAll(true); setConfirmFixOpen(true); }}
+                    className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-2 rounded-lg transition-colors"
+                    disabled={fixPriceMutation.isPending}
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Corrigir Todos ({auditItems.length})
+                  </button>
+                </div>
+              </div>
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow>
+                    <TableHead className="w-8">
+                      <input
+                        type="checkbox"
+                        id="audit-select-all"
+                        className="rounded"
+                        checked={selectedAuditIds.size === auditItems.length && auditItems.length > 0}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedAuditIds(new Set(auditItems.map((i: any) => i.id)));
+                          else setSelectedAuditIds(new Set());
+                        }}
+                      />
+                    </TableHead>
+                    <TableHead>Data da Venda</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Origem</TableHead>
+                    <TableHead>Produto</TableHead>
+                    <TableHead>Variante</TableHead>
+                    <TableHead>Qtd</TableHead>
+                    <TableHead className="text-right">Preço Cobrado</TableHead>
+                    <TableHead className="text-right text-emerald-700">Preço Correto</TableHead>
+                    <TableHead className="text-right text-red-600">Diferença</TableHead>
+                    <TableHead>Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {auditItems.map((item: any) => {
+                    const correctPrice = parseFloat(item.product_variants?.sale_price);
+                    const chargedPrice = Number(item.unit_price);
+                    const diff = (chargedPrice - correctPrice) * item.quantity;
+                    const saleDate = item.sales?.created_at ? new Date(item.sales.created_at).toLocaleDateString('pt-BR') : '-';
+                    return (
+                      <TableRow
+                        key={item.id}
+                        className={`hover:bg-amber-50 transition-colors ${selectedAuditIds.has(item.id) ? 'bg-amber-50' : 'bg-red-50/20'}`}
+                      >
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            id={`audit-check-${item.id}`}
+                            className="rounded"
+                            checked={selectedAuditIds.has(item.id)}
+                            onChange={(e) => {
+                              const next = new Set(selectedAuditIds);
+                              if (e.target.checked) next.add(item.id); else next.delete(item.id);
+                              setSelectedAuditIds(next);
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{saleDate}</TableCell>
+                        <TableCell className="text-xs">{item.sales?.customers?.name || <span className="italic text-muted-foreground">Anônimo</span>}</TableCell>
+                        <TableCell className="text-xs">{item.sales?.sale_origin || '-'}</TableCell>
+                        <TableCell className="font-medium text-xs">{item.products?.name}</TableCell>
+                        <TableCell className="text-xs">{item.product_variants?.size} {item.product_variants?.color}</TableCell>
+                        <TableCell className="text-xs text-center">{item.quantity}</TableCell>
+                        <TableCell className="text-right text-xs">
+                          <span className="font-medium text-red-600">R$ {chargedPrice.toFixed(2)}</span>
+                          <span className="text-[10px] text-gray-400 block">(normal: R$ {parseFloat(item.products?.sale_price).toFixed(2)})</span>
+                        </TableCell>
+                        <TableCell className="text-right font-bold text-emerald-700 text-xs">R$ {correctPrice.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-black text-red-600 text-xs">+ R$ {diff.toFixed(2)}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              id={`audit-open-sale-${item.sale_id}`}
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs h-7 px-2"
+                              onClick={() => { setActiveTab('vendas'); handleOpenDetails(item.sale_id); }}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              id={`audit-fix-item-${item.id}`}
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-7 px-2 border-emerald-500 text-emerald-700 hover:bg-emerald-50 font-bold"
+                              disabled={fixPriceMutation.isPending}
+                              onClick={() => { setSelectedAuditIds(new Set([item.id])); setFixingAll(false); setConfirmFixOpen(true); }}
+                            >
+                              Corrigir
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <div className="p-4 bg-amber-50/50 border-t flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-amber-900 font-semibold">
+                    Impacto total estimado:
+                    <span className="ml-2 text-red-600 text-base font-black">
+                      + R$ {auditItems.reduce((acc: number, item: any) => acc + ((Number(item.unit_price) - parseFloat(item.product_variants?.sale_price)) * item.quantity), 0).toFixed(2)}
+                    </span>
+                    <span className="text-amber-700 font-normal"> a mais registrado vs. preço promocional correto</span>
+                  </p>
+                  <p className="text-[11px] text-amber-700 mt-1">
+                    ⚠️ A correção atualiza o histórico. Ela NÃO devolve dinheiro — apenas corrige o registro financeiro interno.
+                  </p>
+                </div>
+                {selectedAuditIds.size > 0 && (
+                  <button
+                    onClick={() => { setFixingAll(false); setConfirmFixOpen(true); }}
+                    className="shrink-0 flex items-center gap-1.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
+                    disabled={fixPriceMutation.isPending}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    Corrigir {selectedAuditIds.size} item(ns) selecionado(s)
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Diálogo de Confirmação de Correção */}
+      <Dialog open={confirmFixOpen} onOpenChange={(o) => !fixPriceMutation.isPending && setConfirmFixOpen(o)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-amber-700 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" /> Confirmar Correção do Histórico
+            </DialogTitle>
+          </DialogHeader>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900 space-y-2">
+            <p className="font-bold">Você está prestes a corrigir o histórico financeiro.</p>
+            <p>
+              Serão corrigidos <strong>{fixingAll ? auditItems.length : selectedAuditIds.size}</strong> item(ns).
+              O sistema vai:
+            </p>
+            <ul className="list-disc pl-4 space-y-1 text-xs">
+              <li>Atualizar o <code>unit_price</code> e <code>total_price</code> de cada item de venda</li>
+              <li>Recalcular o <code>total_amount</code> de cada venda afetada</li>
+              <li>Ajustar proporcionalmente os repasses P2P (se houver)</li>
+            </ul>
+            <p className="text-amber-700 font-semibold text-xs mt-2">
+              ⚠️ Esta ação NÃO devolve dinheiro ao cliente — apenas corrige o registro interno.
+              Certifique-se de que os preços estão corretos antes de prosseguir.
+            </p>
+          </div>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" onClick={() => setConfirmFixOpen(false)} disabled={fixPriceMutation.isPending}>
+              Cancelar
+            </Button>
+            <Button
+              id="btn-confirm-fix"
+              className="bg-emerald-600 hover:bg-emerald-700 font-bold"
+              disabled={fixPriceMutation.isPending}
+              onClick={() => {
+                const toFix = fixingAll
+                  ? auditItems
+                  : auditItems.filter((i: any) => selectedAuditIds.has(i.id));
+                fixPriceMutation.mutate(toFix);
+              }}
+            >
+              {fixPriceMutation.isPending ? 'Corrigindo...' : 'Sim, Corrigir Histórico'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Detalhes da Venda */}
       <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>

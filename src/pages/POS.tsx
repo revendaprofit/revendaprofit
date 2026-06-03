@@ -57,20 +57,26 @@ export default function POS() {
               const productId = i.product?.id || '';
               const isHub = i.product?._is_hub || String(productId).startsWith('hub_');
               const realId = isHub && String(productId).startsWith('hub_') ? productId.replace('hub_', '') : productId;
-              return {
-               variant_id: i.variant_id,
-               product_id: realId,
-               name: i.product?.name || 'Produto',
-               variant_desc: `${i.variant?.size || ''} ${i.variant?.color ? `- ${i.variant.color}` : ''}`.trim(),
-               price: i.product?.sale_price || 0,
-               cost_price: i.product?.cost_price || 0,
-               quantity: i.qty || 1,
-               max_stock: i.variant?.stock || 99,
-               _is_hub: isHub || false,
-               _hub_product_id: isHub ? (i.product?._hub_product_id || realId) : undefined,
-               _supplier_id: i.product?._supplier_id || undefined
-              };
-           }));
+               // effective_price é gravado pelo catálogo online respeitando o preço promocional da variante
+               // Fallback: variant.sale_price > product.sale_price (compra direta no PDV)
+               const variantSalePrice = i.variant?.sale_price && parseFloat(i.variant.sale_price) > 0
+                 ? parseFloat(i.variant.sale_price)
+                 : null;
+               const effectivePrice = i.effective_price ?? i.unit_price ?? variantSalePrice ?? i.product?.sale_price ?? 0;
+               return {
+                variant_id: i.variant_id,
+                product_id: realId,
+                name: i.product?.name || 'Produto',
+                variant_desc: `${i.variant?.size || ''} ${i.variant?.color ? `- ${i.variant.color}` : ''}`.trim(),
+                price: effectivePrice,
+                cost_price: i.product?.cost_price || 0,
+                quantity: i.qty || 1,
+                max_stock: i.variant?.stock || 99,
+                _is_hub: isHub || false,
+                _hub_product_id: isHub ? (i.product?._hub_product_id || realId) : undefined,
+                _supplier_id: i.product?._supplier_id || undefined
+               };
+            }));
         }
         
         if (order.consignment_bag_id) {

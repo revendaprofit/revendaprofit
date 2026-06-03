@@ -871,12 +871,20 @@ export default function PublicCatalog() {
 
     setIsSubmitting(true);
     try {
+      // Enriquecer cada item com o effective_price (preço real cobrado, respeitando promoção de variante)
+      const enrichedItems = cart.map(item => {
+        const effectivePrice = dealsActive && item.variant?.sale_price && parseFloat(item.variant.sale_price) > 0
+          ? parseFloat(item.variant.sale_price)
+          : item.product.sale_price;
+        return { ...item, effective_price: effectivePrice };
+      });
+
       const { data: orderCode, error } = await supabase.rpc('register_public_order', {
          p_store_id: store.owner_id,
          p_name: customerName,
          p_whatsapp: customerWhatsapp,
          p_total_amount: totalCart,
-         p_items: cart
+         p_items: enrichedItems
       });
 
       if (error) {
@@ -1183,7 +1191,18 @@ export default function PublicCatalog() {
                     <span className="font-semibold">{item.product.name}</span> <span className="text-gray-500">({item.variant.size} {item.variant.color})</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-bold text-gray-900">R$ {(item.product.sale_price * item.qty).toFixed(2)}</span>
+                     {(() => {
+                       const effPrice = dealsActive && item.variant?.sale_price && parseFloat(item.variant.sale_price) > 0
+                         ? parseFloat(item.variant.sale_price)
+                         : item.product.sale_price;
+                       const isPromo = effPrice < item.product.sale_price;
+                       return (
+                         <span className="font-bold text-gray-900 text-right">
+                           {isPromo && <span className="text-[10px] text-gray-400 line-through block">{(item.product.sale_price * item.qty).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>}
+                           <span className={isPromo ? 'text-red-600' : ''}>{(effPrice * item.qty).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                         </span>
+                       );
+                     })()}
                     <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500 hover:text-black" onClick={() => handleRemoveFromCart(item.variant_id)}><Minus className="h-3 w-3" /></Button>
                       <span className="w-6 text-center font-bold text-xs text-gray-700">{item.qty}</span>
