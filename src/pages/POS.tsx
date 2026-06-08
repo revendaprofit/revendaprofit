@@ -656,8 +656,8 @@ export default function POS() {
                          totalOwedToCreditor = Math.max(0, grossOwed - feeSliceCreditor);
                      }
 
-                    // Só cria settlement imediatamente se o pagamento não for parcelado
-                    if (group.status !== 'p2p_pending_payment') {
+                    // Só cria settlement se: pagamento não parcelado E produto é da sócia (não auto-referencial)
+                    if (group.status !== 'p2p_pending_payment' && !isMyOwnProduct) {
                       await supabase.from('partnership_settlements').insert({
                          partnership_id: contract.id,
                          partnership_order_id: pOrder.id,
