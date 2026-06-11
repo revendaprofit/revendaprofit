@@ -47,7 +47,11 @@ export default function StockControl() {
     filterColor: '',
     ncm: '',
     ean: '',
-    mediaStatus: 'all'
+    mediaStatus: 'all',
+    // p2p-specific
+    partnershipId: 'all',
+    categoryName: '',
+    subcategoryName: '',
   });
 
   const activeFiltersCount = Object.values(filters).filter(v => v !== 'all' && v !== '').length;
@@ -94,10 +98,17 @@ export default function StockControl() {
              categories: { name: p.category_name || 'Compartilhado' }
           }));
           
+          if (filters.partnershipId !== 'all') result = result.filter((r:any) => r.p2p_partnership_id === filters.partnershipId);
+          if (filters.categoryName) result = result.filter((r:any) => (r.category_name || '').toLowerCase().includes(filters.categoryName.toLowerCase()));
+          if (filters.subcategoryName) result = result.filter((r:any) => (r.subcategory_name || '').toLowerCase().includes(filters.subcategoryName.toLowerCase()));
           if (filters.stockStatus === 'out_of_stock') result = result.filter((r:any) => r.total_stock === 0);
           else if (filters.stockStatus === 'in_stock') result = result.filter((r:any) => r.total_stock > 0);
           if (filters.minPrice) result = result.filter((r:any) => r.sale_price >= parseFloat(filters.minPrice));
           if (filters.maxPrice) result = result.filter((r:any) => r.sale_price <= parseFloat(filters.maxPrice));
+          if (filters.filterModel) result = result.filter((r:any) => (r.filter_model || '').toLowerCase().includes(filters.filterModel.toLowerCase()));
+          if (filters.filterColor) result = result.filter((r:any) => (r.filter_color || '').toLowerCase().includes(filters.filterColor.toLowerCase()));
+          if (filters.ncm) result = result.filter((r:any) => r.ncm === filters.ncm);
+          if (filters.ean) result = result.filter((r:any) => r.ean === filters.ean);
           if (filters.mediaStatus === 'has_media') result = result.filter((r:any) => !!r.image_url);
           if (filters.mediaStatus === 'no_photo') result = result.filter((r:any) => !r.image_url);
           return result;
@@ -250,7 +261,7 @@ export default function StockControl() {
       </div>
 
       <div className="flex flex-col sm:flex-row justify-between gap-4 bg-muted/30 p-4 rounded-lg items-center">
-        <Tabs value={activeTab} onValueChange={(v: any) => { setActiveTab(v); setSelectedIds([]); setSearch(''); setFilters({ categoryId: 'all', supplierId: 'all', subcategoryId: 'all', stockStatus: 'all', minPrice: '', maxPrice: '', filterModel: '', filterColor: '', ncm: '', ean: '', mediaStatus: 'all' }); }}>
+        <Tabs value={activeTab} onValueChange={(v: any) => { setActiveTab(v); setSelectedIds([]); setSearch(''); setFilters({ categoryId: 'all', supplierId: 'all', subcategoryId: 'all', stockStatus: 'all', minPrice: '', maxPrice: '', filterModel: '', filterColor: '', ncm: '', ean: '', mediaStatus: 'all', partnershipId: 'all', categoryName: '', subcategoryName: '' }); }}>
           <TabsList>
             <TabsTrigger value="local">Meu Estoque</TabsTrigger>
             <TabsTrigger value="p2p">Estoque Parceiro</TabsTrigger>
@@ -279,85 +290,162 @@ export default function StockControl() {
               </SheetHeader>
               
               <div className="py-6 space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Categoria</label>
-                    <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.categoryId} onChange={e => setFilters({...filters, categoryId: e.target.value})}>
-                      <option value="all">Todas as Categorias</option>
-                      <option value="none" className="text-destructive font-medium">Sem Categoria</option>
-                      {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Fornecedor</label>
-                    <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.supplierId} onChange={e => setFilters({...filters, supplierId: e.target.value})}>
-                      <option value="all">Todos os Fornecedores</option>
-                      <option value="none" className="text-destructive font-medium">Sem Fornecedor</option>
-                      {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </div>
-                </div>
+                {activeTab === 'p2p' ? (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold uppercase text-muted-foreground">Filtrar por Parceira</label>
+                      <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.partnershipId} onChange={e => setFilters({...filters, partnershipId: e.target.value})}>
+                        <option value="all">Todas as Parceiras</option>
+                        {partnerships.map((p: any) => {
+                          const label = [p.requester?.name || p.requester?.email, p.receiver?.name || p.receiver?.email].filter(Boolean).join(' ↔ ');
+                          return <option key={p.id} value={p.id}>{label}</option>;
+                        })}
+                      </select>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Subcategoria</label>
-                    <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.subcategoryId} onChange={e => setFilters({...filters, subcategoryId: e.target.value})}>
-                      <option value="all">Todas as Subcategorias</option>
-                      <option value="none" className="text-destructive font-medium">Sem Subcategoria</option>
-                      {subcategories.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Status do Estoque</label>
-                    <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.stockStatus} onChange={e => setFilters({...filters, stockStatus: e.target.value})}>
-                      <option value="all">Qualquer Status</option>
-                      <option value="in_stock">Em Estoque (Positivo)</option>
-                      <option value="out_of_stock">Esgotado (Zero)</option>
-                    </select>
-                  </div>
-                </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Categoria</label>
+                        <Input placeholder="Buscar por nome..." value={filters.categoryName} onChange={e => setFilters({...filters, categoryName: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Subcategoria</label>
+                        <Input placeholder="Buscar por nome..." value={filters.subcategoryName} onChange={e => setFilters({...filters, subcategoryName: e.target.value})} className="h-9" />
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Preço Mínimo (R$)</label>
-                    <Input type="number" placeholder="Ex: 50" value={filters.minPrice} onChange={e => setFilters({...filters, minPrice: e.target.value})} className="h-9" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Preço Máximo (R$)</label>
-                    <Input type="number" placeholder="Ex: 150" value={filters.maxPrice} onChange={e => setFilters({...filters, maxPrice: e.target.value})} className="h-9" />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Status do Estoque</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.stockStatus} onChange={e => setFilters({...filters, stockStatus: e.target.value})}>
+                          <option value="all">Qualquer Status</option>
+                          <option value="in_stock">Em Estoque (Positivo)</option>
+                          <option value="out_of_stock">Esgotado (Zero)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Status de Mídia</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.mediaStatus} onChange={e => setFilters({...filters, mediaStatus: e.target.value})}>
+                          <option value="all">Todas as Mídias</option>
+                          <option value="has_media">Com Foto Principal</option>
+                          <option value="no_photo">Sem Foto</option>
+                        </select>
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Modelo</label>
-                    <Input placeholder="Palavra chave..." value={filters.filterModel} onChange={e => setFilters({...filters, filterModel: e.target.value})} className="h-9" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Cor / Tonalidade</label>
-                    <Input placeholder="Palavra chave..." value={filters.filterColor} onChange={e => setFilters({...filters, filterColor: e.target.value})} className="h-9" />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Preço Mínimo (R$)</label>
+                        <Input type="number" placeholder="Ex: 50" value={filters.minPrice} onChange={e => setFilters({...filters, minPrice: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Preço Máximo (R$)</label>
+                        <Input type="number" placeholder="Ex: 150" value={filters.maxPrice} onChange={e => setFilters({...filters, maxPrice: e.target.value})} className="h-9" />
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-4 border-t pt-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Status de Mídia</label>
-                    <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.mediaStatus} onChange={e => setFilters({...filters, mediaStatus: e.target.value})}>
-                      <option value="all">Todas as Mídias</option>
-                      <option value="has_media">Com Foto Principal</option>
-                      <option value="no_photo">Sem Foto</option>
-                      <option value="no_video">Sem Vídeo</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">NCM (Fiscal)</label>
-                    <Input placeholder="Pesquisa exata..." value={filters.ncm} onChange={e => setFilters({...filters, ncm: e.target.value})} className="h-9" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase text-muted-foreground">Código EAN</label>
-                    <Input placeholder="Pesquisa exata..." value={filters.ean} onChange={e => setFilters({...filters, ean: e.target.value})} className="h-9" />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-2 gap-4 border-t pt-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Modelo</label>
+                        <Input placeholder="Palavra chave..." value={filters.filterModel} onChange={e => setFilters({...filters, filterModel: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Cor / Tonalidade</label>
+                        <Input placeholder="Palavra chave..." value={filters.filterColor} onChange={e => setFilters({...filters, filterColor: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">NCM (Fiscal)</label>
+                        <Input placeholder="Pesquisa exata..." value={filters.ncm} onChange={e => setFilters({...filters, ncm: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Código EAN</label>
+                        <Input placeholder="Pesquisa exata..." value={filters.ean} onChange={e => setFilters({...filters, ean: e.target.value})} className="h-9" />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Categoria</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.categoryId} onChange={e => setFilters({...filters, categoryId: e.target.value})}>
+                          <option value="all">Todas as Categorias</option>
+                          <option value="none" className="text-destructive font-medium">Sem Categoria</option>
+                          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Fornecedor</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.supplierId} onChange={e => setFilters({...filters, supplierId: e.target.value})}>
+                          <option value="all">Todos os Fornecedores</option>
+                          <option value="none" className="text-destructive font-medium">Sem Fornecedor</option>
+                          {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Subcategoria</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.subcategoryId} onChange={e => setFilters({...filters, subcategoryId: e.target.value})}>
+                          <option value="all">Todas as Subcategorias</option>
+                          <option value="none" className="text-destructive font-medium">Sem Subcategoria</option>
+                          {subcategories.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Status do Estoque</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.stockStatus} onChange={e => setFilters({...filters, stockStatus: e.target.value})}>
+                          <option value="all">Qualquer Status</option>
+                          <option value="in_stock">Em Estoque (Positivo)</option>
+                          <option value="out_of_stock">Esgotado (Zero)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Preço Mínimo (R$)</label>
+                        <Input type="number" placeholder="Ex: 50" value={filters.minPrice} onChange={e => setFilters({...filters, minPrice: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Preço Máximo (R$)</label>
+                        <Input type="number" placeholder="Ex: 150" value={filters.maxPrice} onChange={e => setFilters({...filters, maxPrice: e.target.value})} className="h-9" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Modelo</label>
+                        <Input placeholder="Palavra chave..." value={filters.filterModel} onChange={e => setFilters({...filters, filterModel: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Cor / Tonalidade</label>
+                        <Input placeholder="Palavra chave..." value={filters.filterColor} onChange={e => setFilters({...filters, filterColor: e.target.value})} className="h-9" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 border-t pt-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Status de Mídia</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm" value={filters.mediaStatus} onChange={e => setFilters({...filters, mediaStatus: e.target.value})}>
+                          <option value="all">Todas as Mídias</option>
+                          <option value="has_media">Com Foto Principal</option>
+                          <option value="no_photo">Sem Foto</option>
+                          <option value="no_video">Sem Vídeo</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">NCM (Fiscal)</label>
+                        <Input placeholder="Pesquisa exata..." value={filters.ncm} onChange={e => setFilters({...filters, ncm: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase text-muted-foreground">Código EAN</label>
+                        <Input placeholder="Pesquisa exata..." value={filters.ean} onChange={e => setFilters({...filters, ean: e.target.value})} className="h-9" />
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               <SheetFooter className="mt-8 flex-col sm:flex-col gap-2">
@@ -367,7 +455,7 @@ export default function StockControl() {
                 <Button 
                   variant="ghost" 
                   className="w-full text-muted-foreground" 
-                  onClick={() => setFilters({ categoryId: 'all', supplierId: 'all', subcategoryId: '', stockStatus: 'all', minPrice: '', maxPrice: '', filterModel: '', filterColor: '', ncm: '', ean: '', mediaStatus: 'all' })}
+                  onClick={() => setFilters({ categoryId: 'all', supplierId: 'all', subcategoryId: 'all', stockStatus: 'all', minPrice: '', maxPrice: '', filterModel: '', filterColor: '', ncm: '', ean: '', mediaStatus: 'all', partnershipId: 'all', categoryName: '', subcategoryName: '' })}
                 >
                   <X className="mr-2 h-4 w-4" /> Limpar Filtros
                 </Button>

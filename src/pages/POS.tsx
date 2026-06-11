@@ -611,69 +611,10 @@ export default function POS() {
                     sale_price: p2pItem.price,
                     status: isMyOwnProduct ? 'confirmed' : 'pending_confirmation',
                     order_type: 'sale'
-                 }).select('id').single();
-
-                 if (!pOrderErr && pOrder) {
-                    const customCostPerc = parseFloat(contract.cost_recovery_owner_percent) / 100;
-                    let costSliceCreditor = 0;
-
-                    if (contract.cost_recovery_type === 'owner_100') {
-                        costSliceCreditor = isMyOwnProduct ? 0 : p2pItem.cost_price;
-                    } else if (contract.cost_recovery_type === 'shared_50_50') {
-                        costSliceCreditor = p2pItem.cost_price * 0.5;
-                    } else if (contract.cost_recovery_type === 'custom') {
-                        costSliceCreditor = isMyOwnProduct
-                            ? p2pItem.cost_price * (1 - customCostPerc)
-                            : p2pItem.cost_price * customCostPerc;
-                    }
-
-                     // Taxa proporcional deste item
-                     const itemRevenue = p2pItem.price * p2pItem.quantity;
-                     const itemFeeRatio = totalP2PRevenue > 0 ? itemRevenue / totalP2PRevenue : 1;
-                     const itemFees = totalFees * itemFeeRatio;
-                     const itemFeesPerUnit = p2pItem.quantity > 0 ? itemFees / p2pItem.quantity : 0;
-                     const lucroBruto = Math.max(0, p2pItem.price - p2pItem.cost_price);
-
-                     let profitSliceCreditor = 0;
-                     let feeSliceCreditor = 0;
-                     let totalOwedToCreditor = 0;
-
-                     if (contract.fee_responsibility_type === 'shared_50_50') {
-                         // MODELO A: taxa abatida do lucro ANTES da divisão 85/15
-                         const lucroLiquido = Math.max(0, lucroBruto - itemFeesPerUnit);
-                         profitSliceCreditor = lucroLiquido * (parseFloat(contract.profit_split_partner_percent) / 100);
-                         feeSliceCreditor = 0;
-                         totalOwedToCreditor = (costSliceCreditor + profitSliceCreditor) * p2pItem.quantity;
-                     } else {
-                         // MODELO B: divide o bruto, depois cada sócia paga sua taxa do próprio lucro
-                         profitSliceCreditor = lucroBruto * (parseFloat(contract.profit_split_partner_percent) / 100);
-                         if (contract.fee_responsibility_type === 'custom') {
-                             const sellerPercent = Number(contract.fee_responsibility_seller_percent) / 100;
-                             feeSliceCreditor = itemFees * (1 - sellerPercent);
-                         }
-                         // seller_100: feeSliceCreditor = 0 (vendedora paga tudo)
-                         const grossOwed = (costSliceCreditor + profitSliceCreditor) * p2pItem.quantity;
-                         totalOwedToCreditor = Math.max(0, grossOwed - feeSliceCreditor);
-                     }
-
-                    // Só cria settlement se: pagamento não parcelado E produto é da sócia (não auto-referencial)
-                    if (group.status !== 'p2p_pending_payment' && !isMyOwnProduct) {
-                      await supabase.from('partnership_settlements').insert({
-                         partnership_id: contract.id,
-                         partnership_order_id: pOrder.id,
-                         debtor_id: user.id,
-                         creditor_id: creditorId,
-                         cost_slice: costSliceCreditor * p2pItem.quantity,
-                         profit_slice: profitSliceCreditor * p2pItem.quantity,
-                         fee_slice: feeSliceCreditor,
-                         amount_owed: totalOwedToCreditor,
-                         status: 'open'
-                      });
-                    }
-                 }
+                 });
               }
-          }
-
+           }
+          
           // Parcelas rateadas
           if (pm1?.is_installment && installments1.length > 0) {
             const instsToInsert = installments1.map((inst, index) => ({

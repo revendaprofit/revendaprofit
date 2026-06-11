@@ -240,17 +240,7 @@ export default function InstallmentsReport() {
                         totalOwed = Math.max(0, grossOwed - feeSliceCreditor);
                     }
 
-                    await supabase.from('partnership_settlements').insert({
-                     partnership_id: pOrder.partnership_id,
-                     partnership_order_id: pOrder.id,
-                     debtor_id: pOrder.seller_id,
-                     creditor_id: pOrder.owner_id,
-                     cost_slice: costSliceCreditor * qty,
-                     profit_slice: profitSliceCreditor * qty,
-                     fee_slice: feeSliceCreditor,
-                     amount_owed: totalOwed,
-                     status: 'open'
-                   });
+                     // O acerto de contas (partnership_settlement) agora é inserido automaticamente pela trigger do banco assim que a ordem é confirmada.
                  }
                }
              }
