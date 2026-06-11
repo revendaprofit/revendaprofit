@@ -247,45 +247,8 @@ export default function POS() {
         })
       })) as Product[];
 
-      // Identificar se produtos locais estão vinculados a alguma parceria ativa
-      // Quando o produto está em parceria, a venda DEVE seguir o fluxo P2P (acerto de contas)
-      const localProductIds = localProducts.map(p => p.id);
-      let localSharedMap: Record<string, { partnership_id: string, other_partner_id: string }> = {};
-      
-      if (localProductIds.length > 0) {
-        const { data: sharedData } = await supabase
-          .from('partnership_shared_products')
-          .select('product_id, partnership_id, partnerships!inner(requester_id, receiver_id, status)')
-          .in('product_id', localProductIds)
-          .eq('partnerships.status', 'active');
-          
-        if (sharedData) {
-          sharedData.forEach((sd: any) => {
-             const partnerId = sd.partnerships.requester_id === user.id ? sd.partnerships.receiver_id : sd.partnerships.requester_id;
-             localSharedMap[sd.product_id] = {
-                partnership_id: sd.partnership_id,
-                other_partner_id: partnerId
-             };
-          });
-        }
-      }
-
-      localProducts = localProducts.map(p => {
-          const shared = localSharedMap[p.id];
-          if (shared) {
-             return {
-                ...p,
-                _is_p2p: true,
-                _p2p_partnership_id: shared.partnership_id,
-                _p2p_owner_id: user.id,
-                _p2p_original_owner_id: user.id,
-                _p2p_creditor_id: shared.other_partner_id
-             };
-          }
-          return p;
-      });
-      
-      console.log("[DEBUG POS] Local P2P items:", localProducts.filter(p => p._is_p2p).length);
+      // Produtos locais do próprio lojista não devem ser tratados como P2P (mesmo que compartilhados),
+      // pois a venda deles é uma transação direta local comum sem repasse para terceiras.
 
       // 2. Produtos importados do Hub
       let hubProducts: Product[] = [];
