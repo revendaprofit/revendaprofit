@@ -76,6 +76,38 @@ export default function Partnerships() {
            <PartnershipWizardDialog />
         </div>
       </div>
+ 
+      {/* Painel de Objetivos, Instruções e Testes */}
+      <div className="rounded-xl border bg-gradient-to-r from-fuchsia-50/50 to-pink-50/50 p-6 shadow-sm">
+        <h2 className="font-bold text-lg text-fuchsia-950 mb-2 flex items-center gap-2">
+          🎯 Objetivos e Guia de Uso: Sócias & Parcerias (P2P)
+        </h2>
+        <p className="text-sm text-fuchsia-900/80 mb-4">
+          Este módulo gerencia a integração de estoques mútuos e rateio de comissões/custos P2P (Partner-to-Partner) de forma estruturada.
+        </p>
+        
+        <div className="grid md:grid-cols-2 gap-4 text-xs">
+          <div className="space-y-2 text-fuchsia-950">
+            <p className="font-bold uppercase tracking-wider text-[10px] text-fuchsia-800">📖 Instruções de Uso</p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li><strong>Conexão:</strong> Clique em "Novo Acordo" e digite o e-mail cadastrado da sua parceira para enviar o convite.</li>
+              <li><strong>Compartilhar Catálogo:</strong> Após a ativação, vá em "Ver Catálogo" para selecionar quais peças deseja disponibilizar para ela vender.</li>
+              <li><strong>Empréstimos (Loans):</strong> Use a opção "Solicitar Peça" para transferir fisicamente peças para sua loja.</li>
+              <li><strong>Acerto Financeiro:</strong> As vendas de peças compartilhadas geram ordens automáticas de repasse de custos e divisão de lucros.</li>
+            </ul>
+          </div>
+          
+          <div className="space-y-2 text-fuchsia-950 border-t md:border-t-0 md:border-l border-fuchsia-200/50 md:pl-4">
+            <p className="font-bold uppercase tracking-wider text-[10px] text-fuchsia-800">🧪 Como Testar esta Funcionalidade</p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li><strong>Passo 1:</strong> Crie uma parceria de teste ativa entre duas contas no sistema.</li>
+              <li><strong>Passo 2:</strong> Acesse o catálogo de compartilhamento e marque pelo menos um produto com estoque para ser compartilhado.</li>
+              <li><strong>Passo 3:</strong> Abra a tela do PDV (POS) da conta vendedora, busque pelo produto compartilhado (indicado com o ícone 🤝) e registre a venda.</li>
+              <li><strong>Passo 4:</strong> Na conta da dona do produto, confirme a ordem de liberação P2P na listagem e verifique se o acerto de contas gerou o repasse financeiro correto.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
 
       <div className="grid gap-6">
         <div className="rounded-xl border bg-card p-6 shadow-sm">
