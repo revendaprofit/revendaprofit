@@ -5,8 +5,7 @@ export function consolidateProducts(products: any[]) {
     name
       .toLowerCase()
       .trim()
-      .replace(/^(🏪|🤝)\s*/, '')           // remove emoji prefix
-      .replace(/[\s_-]*(parceria|parceiro|sócia|socia|p2p|sócia\s*&\s*parceira)[\s_-]*/gi, '') // remove P2P keywords anywhere
+      .replace(/^(🏪)\s*/, '')           // remove emoji prefix
       .replace(/\(.*?\)/g, '')              // remove anything in parentheses
       .trim();
 
@@ -21,10 +20,9 @@ export function consolidateProducts(products: any[]) {
     } else {
       const existing = map.get(normName);
 
-      // Priority: Local (3) > Hub (2) > P2P (1)
+      // Priority: Local (2) > Hub (1)
       const getScore = (prod: any) => {
-        if (!prod._is_hub && !prod._is_p2p) return 3;
-        if (prod._is_hub) return 2;
+        if (!prod._is_hub) return 2;
         return 1;
       };
 
@@ -39,28 +37,18 @@ export function consolidateProducts(products: any[]) {
 
       // Build set of size-color keys already present in base (local/hub variants)
       const baseVariantKeys = new Set<string>(
-        (base.product_variants || [])
-          .filter((v: any) => !v._is_p2p)
-          .map(variantKey)
+        (base.product_variants || []).map(variantKey)
       );
 
-      // Add variants from the other source, skipping P2P ones that duplicate a local/hub variant
+      // Add variants from the other source, skipping duplicates
       for (const v of other.product_variants || []) {
         const vKey = variantKey(v);
-        const isP2P = other._is_p2p || v._is_p2p;
-
-        // If this variant already exists in local/hub stock, don't show the P2P copy
-        if (isP2P && baseVariantKeys.has(vKey)) continue;
+        if (baseVariantKeys.has(vKey)) continue;
 
         base.product_variants.push({
           ...v,
-          _is_p2p: other._is_p2p,
           _is_hub: other._is_hub,
           _parent_id: other.id,
-          _p2p_partnership_id: other._p2p_partnership_id,
-          _p2p_owner_id: other._p2p_owner_id,
-          _p2p_creditor_id: other._p2p_creditor_id,
-          _p2p_original_owner_id: other._p2p_original_owner_id,
           _hub_product_id: other._hub_product_id,
           _supplier_id: other._supplier_id,
         });

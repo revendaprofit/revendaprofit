@@ -18,7 +18,6 @@ import {
   ShieldAlert,
   ClipboardList,
   ShoppingBag,
-  Handshake,
   Settings2,
   Briefcase,
   Ticket,
@@ -105,7 +104,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       { name: "Clientes", href: "/customers", icon: Users },
       { name: "Categorias", href: "/categories", icon: Tags },
       { name: "Fornecedores", href: "/suppliers", icon: Truck },
-      { name: "Socias & Parcerias", href: "/partnerships", icon: Handshake },
     ],
     [
       { name: "Produtos em Destaque", href: "/featured-products", icon: Star },

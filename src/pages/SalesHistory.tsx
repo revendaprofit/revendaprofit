@@ -28,7 +28,6 @@ type Sale = {
   customers: any;
   customer_id?: string;
   sale_items?: { unit_cost: number, quantity: number }[];
-  partnership_orders?: any[];
   partner_point_id?: string;
   partner_points?: any;
   sale_installments?: { status: string, amount: number, payment_method_id: string }[];
@@ -79,8 +78,7 @@ export default function SalesHistory() {
           customers ( name ),
           partner_points ( name, commission_arara ),
           sale_installments ( status, amount, payment_method_id ),
-          sale_items ( product_id, unit_cost, quantity, products ( name, cost_price ) ),
-          partnership_orders ( product_id, partnership_settlements ( amount_owed, cost_slice, profit_slice, fee_slice ) )
+          sale_items ( product_id, unit_cost, quantity, products ( name, cost_price ) )
         `)
         .order('created_at', { ascending: false });
       
@@ -132,25 +130,6 @@ export default function SalesHistory() {
         .update({ status: 'cancelled' })
         .eq('sale_id', id)
         .eq('status', 'pending');
-      // Limpar acerto de parceria: busca o partnership_order desta venda
-      const { data: pOrders } = await supabase
-        .from('partnership_orders')
-        .select('id')
-        .eq('sale_id', id);
-      if (pOrders && pOrders.length > 0) {
-        const pOrderIds = pOrders.map((o: any) => o.id);
-        // Deleta settlements abertos vinculados a esses partnership_orders
-        await supabase
-          .from('partnership_settlements')
-          .delete()
-          .in('partnership_order_id', pOrderIds)
-          .eq('status', 'open');
-        // Marca os partnership_orders como cancelados
-        await supabase
-          .from('partnership_orders')
-          .update({ status: 'cancelled' })
-          .in('id', pOrderIds);
-      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales-history'] });
@@ -283,44 +262,6 @@ export default function SalesHistory() {
           .update({ total_amount: newTotalAmount })
           .eq('id', saleId);
         if (saleErr) throw new Error(`Erro ao atualizar venda ${saleId}: ${saleErr.message}`);
-
-        // 3. Ajustar partnership_settlements abertos vinculados a esta venda
-        for (const fi of fixedItems) {
-          const { data: pOrders } = await supabase
-            .from('partnership_orders')
-            .select('id, sale_price')
-            .eq('sale_id', saleId);
-
-          if (pOrders && pOrders.length > 0) {
-            for (const po of pOrders) {
-              const oldSalePrice = Number(po.sale_price || fi.correctPrice);
-              if (oldSalePrice === 0) continue;
-              const { data: settlements } = await supabase
-                .from('partnership_settlements')
-                .select('id, profit_slice, cost_slice, fee_slice')
-                .eq('partnership_order_id', po.id)
-                .eq('status', 'open');
-
-              if (settlements && settlements.length > 0) {
-                // Atualiza também o sale_price no partnership_order
-                await supabase
-                  .from('partnership_orders')
-                  .update({ sale_price: fi.correctPrice })
-                  .eq('id', po.id);
-
-                for (const s of settlements) {
-                  const ratio = fi.correctPrice / oldSalePrice;
-                  const newProfitSlice = Number(s.profit_slice) * ratio;
-                  const newAmountOwed = Math.max(0, Number(s.cost_slice) + newProfitSlice - Number(s.fee_slice));
-                  await supabase
-                    .from('partnership_settlements')
-                    .update({ profit_slice: newProfitSlice, amount_owed: newAmountOwed })
-                    .eq('id', s.id);
-                }
-              }
-            }
-          }
-        }
       }
 
       return Object.keys(bySaleId).length;
@@ -342,17 +283,14 @@ export default function SalesHistory() {
   });
 
   const getStatusBadge = (status: string) => {
-    if (status === 'completed' || status === 'p2p_settlement') {
+    if (status === 'completed') {
       return <span className="px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-bold uppercase tracking-wide">Concluída</span>;
     }
-    if (status === 'installment' || status === 'p2p_pending_payment') {
+    if (status === 'installment') {
       return <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-lg text-xs font-semibold">Pagamento Pendente</span>;
     }
     if (status === 'open') {
       return <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-lg text-xs font-semibold">Em Aberto</span>;
-    }
-    if (status === 'rejected_p2p') {
-      return <span className="px-2 py-1 bg-red-600 text-white rounded-lg text-[10px] font-black uppercase shadow-sm animate-pulse whitespace-nowrap">🚨 Ação Nec: Parceiro Recusou</span>;
     }
     return <span className="px-2 py-1 bg-red-100 text-red-700 rounded-lg text-xs font-semibold">Cancelada</span>;
   };
@@ -384,38 +322,13 @@ export default function SalesHistory() {
   const validSales = filteredSales.filter(s => s.status !== 'cancelled');
   const sumVendas = validSales.reduce((a, b) => a + Number(b.total_amount || 0), 0);
   const sumCustos = validSales.reduce((a, s) => {
-      // Para cada item da venda, verifica se tem settlement de parceria para compor o custo real
-      const pOrders = s.partnership_orders || [];
       const itemsCost = s.sale_items?.reduce((acc: number, item: any) => {
-          const pOrder = pOrders.find((po: any) => po.product_id === item.product_id);
-          const pSetRaw = pOrder?.partnership_settlements;
-          const pSettlement = Array.isArray(pSetRaw) ? pSetRaw[0] : pSetRaw;
-          
           const pureCst = Number(item.unit_cost) || Number(item.products?.cost_price) || 0;
-          const pureCostTotal = pureCst * Number(item.quantity || 1);
-
-          if (pSettlement && pSettlement.amount_owed) {
-             // O custo reflete minha obrigação total com o parceiro + a parte do meu custo que eu banquei
-             // Wait, if pureCost is 76, and partner repaid 38. The total money leaving my domain is pureCost (part gone out the window) + profit_slice to partner.
-             // But actually, sumCustos for the top dashboard should just be: Total Owed to partner + MY cost liability.
-             // Actually, let's keep sumCustos as Pure Cost + Repasse portion, or maybe just Pure Cost is easier for the dashboard.
-             // The dashboard should probably reflect pure cost. Let's make it the Pure Cost.
-             return acc + pureCostTotal;
-          } else {
-             return acc + pureCostTotal;
-          }
+          return acc + pureCst * Number(item.quantity || 1);
       }, 0) || 0;
-      
-      const repassesCost = s.partnership_orders?.reduce((acc: number, po: any) => {
-          const pSetRaw = po.partnership_settlements;
-          const pSettlement = Array.isArray(pSetRaw) ? pSetRaw[0] : pSetRaw;
-          return acc + (pSettlement?.profit_slice ? Number(pSettlement.profit_slice) : 0);
-      }, 0) || 0;
-
       const ppCommissionRate = Number(s.partner_points?.commission_arara || 0) / 100;
       const ppCommissionCost = s.partner_point_id ? (Number(s.total_amount) * ppCommissionRate) : 0;
-
-      return a + itemsCost + repassesCost + ppCommissionCost;
+      return a + itemsCost + ppCommissionCost;
   }, 0);
   const sumLucroLiquido = sumVendas - sumCustos - validSales.reduce((a, s) => a + (Number(s.payment_fee_amount) || 0) + (Number(s.payment_fee_amount_2) || 0) + (s.shipping_payer === 'seller' ? (Number(s.shipping_cost) || 0) : 0), 0); const margemLucro = sumVendas > 0 ? (sumLucroLiquido / sumVendas) * 100 : 0;
 
@@ -579,9 +492,7 @@ export default function SalesHistory() {
                  <option value="">Todos</option>
                  <option value="completed">Concluída</option>
                  <option value="open">Em aberto</option>
-                 <option value="p2p_settlement">Acerto de Contas</option>
                  <option value="cancelled">Cancelada</option>
-                 <option value="rejected_p2p">Ação Necessária (Recusada)</option>
               </select>
            </div>
            <div className="flex flex-col gap-1">
@@ -988,7 +899,6 @@ export default function SalesHistory() {
 
                   const grossRevenue = saleItems.reduce((acc, item) => acc + Number(item.total_price), 0) - Number(selectedSale.discount);
                   
-                  const pOrders = selectedSale.partnership_orders || [];
                   const pureCost = saleItems.reduce((acc, item) => {
                        const c = item.unit_cost && item.unit_cost > 0 ? item.unit_cost : (item.products?.cost_price || 0);
                        return acc + (Number(c) * item.quantity);
@@ -996,44 +906,11 @@ export default function SalesHistory() {
                   
                   const grossProfit = grossRevenue - pureCost;
 
-                  let totalRepasse = 0;
-                  let totalFeeSlices = 0;
-                  const repasseDetails: any[] = [];
-
-                  saleItems.forEach(item => {
-                     const pOrder = pOrders.find((po: any) => po.product_id === item.product_id);
-                     const pSetRaw = pOrder?.partnership_settlements;
-                     const pSettlement = Array.isArray(pSetRaw) ? pSetRaw[0] : pSetRaw;
-
-                     if (pSettlement && pSettlement.amount_owed) {
-                         const cstSlice = Number(pSettlement.cost_slice || 0);
-                         const prfSlice = Number(pSettlement.profit_slice || 0);
-                         const feeSlice = Number(pSettlement.fee_slice || 0);
-                         totalRepasse += Number(pSettlement.amount_owed);
-                         totalFeeSlices += feeSlice;
-                         repasseDetails.push(
-                            <div key={item.id} className="text-red-500 text-xs pl-4 border-l border-red-200 ml-1 mt-1">
-                               {item.products?.name}: R$ {prfSlice.toFixed(2)} (LUCRO) + R$ {cstSlice.toFixed(2)} (REEMB. CUSTO)
-                               {feeSlice > 0 && ` - R$ ${feeSlice.toFixed(2)} (TAXA DIVIDIDA)`}
-                            </div>
-                         );
-                     }
-                  });
-
                   const fees = Number(selectedSale.payment_fee_amount || 0) + Number(selectedSale.payment_fee_amount_2 || 0);
                   const storeShippingCost = selectedSale.shipping_payer === 'seller' ? Number(selectedSale.shipping_cost || 0) : 0;
-                  // Taxas que a vendedora efetivamente paga (descontada a fatia absorvida pela sócia)
-                  const myFeeBurden = fees - totalFeeSlices;
+                  const myFeeBurden = fees;
 
-                  // Lucro Líquido = Lucro Bruto - Repasse de Lucro - Taxas da Loja - Frete da Loja
-                  const totalProfitRepasse = saleItems.reduce((acc, item) => {
-                     const pOrder = pOrders.find((po: any) => po.product_id === item.product_id);
-                     const pSetRaw = pOrder?.partnership_settlements;
-                     const pSettlement = Array.isArray(pSetRaw) ? pSetRaw[0] : pSetRaw;
-                     return acc + (pSettlement?.amount_owed ? Number(pSettlement.profit_slice || 0) : 0);
-                  }, 0);
-
-                  const netProfit = grossProfit - totalProfitRepasse - myFeeBurden - storeShippingCost;
+                  const netProfit = grossProfit - myFeeBurden - storeShippingCost;
 
                   return (
                     <>
@@ -1055,16 +932,6 @@ export default function SalesHistory() {
                         <span>Lucro Bruto:</span>
                         <span>R$ {grossProfit.toFixed(2)}</span>
                       </div>
-
-                      {totalRepasse > 0 && (
-                        <div className="flex flex-col mt-2">
-                           <div className="flex justify-between text-red-600">
-                             <span>Repasse P2P (Lucro + Custo):</span>
-                             <span>- R$ {totalRepasse.toFixed(2)}</span>
-                           </div>
-                           {repasseDetails}
-                        </div>
-                      )}
 
                       {myFeeBurden > 0 && (
                         <div className="flex justify-between text-red-600 mt-2">

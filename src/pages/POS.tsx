@@ -3,13 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ShoppingCart, CheckCircle, Search, Trash2, ArrowRight, UserPlus, Gift, MapPin, CreditCard, DollarSign, AlertTriangle, Link as LinkIcon } from 'lucide-react';
+import { ShoppingCart, CheckCircle, Search, Trash2, ArrowRight, MapPin, CreditCard, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { consolidateProducts } from '@/utils/productConsolidator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 type Customer = { id: string; name: string; phone?: string };
-type Product = { id: string; name: string; sale_price: number; cost_price: number; image_url: string; product_variants: Variant[]; _is_hub?: boolean; _hub_product_id?: string; _supplier_id?: string; _is_p2p?: boolean; _p2p_partnership_id?: string; _p2p_owner_id?: string; _p2p_creditor_id?: string; _p2p_original_owner_id?: string; };
+type Product = { id: string; name: string; sale_price: number; cost_price: number; image_url: string; product_variants: Variant[]; _is_hub?: boolean; _hub_product_id?: string; _supplier_id?: string; };
 type Variant = { id: string; size: string; color: string; stock: number; _partner_allocated_qty?: number; _partner_names?: string[] };
 type CartItem = { 
   variant_id: string; 
@@ -23,18 +23,13 @@ type CartItem = {
   _is_hub?: boolean;
   _hub_product_id?: string;
   _supplier_id?: string;
-  _is_p2p?: boolean;
-  _p2p_partnership_id?: string;
-  _p2p_owner_id?: string;
-  _p2p_creditor_id?: string;
-  _p2p_original_owner_id?: string;
 };
 
 export default function POS() {
   const queryClient = useQueryClient();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
-  const [showMixedCartWarning, setShowMixedCartWarning] = useState(false);
+
 
   // Fields
   const [saleOrigin, setSaleOrigin] = useState('');
@@ -247,46 +242,6 @@ export default function POS() {
         })
       })) as Product[];
 
-      // Identificar se produtos locais estão vinculados a alguma parceria ativa
-      // Quando o produto está em parceria, a venda DEVE seguir o fluxo P2P (acerto de contas)
-      const localProductIds = localProducts.map(p => p.id);
-      let localSharedMap: Record<string, { partnership_id: string, other_partner_id: string }> = {};
-      
-      if (localProductIds.length > 0) {
-        const { data: sharedData } = await supabase
-          .from('partnership_shared_products')
-          .select('product_id, partnership_id, partnerships!inner(requester_id, receiver_id, status)')
-          .in('product_id', localProductIds)
-          .eq('partnerships.status', 'active');
-          
-        if (sharedData) {
-          sharedData.forEach((sd: any) => {
-             const partnerId = sd.partnerships.requester_id === user.id ? sd.partnerships.receiver_id : sd.partnerships.requester_id;
-             localSharedMap[sd.product_id] = {
-                partnership_id: sd.partnership_id,
-                other_partner_id: partnerId
-             };
-          });
-        }
-      }
-
-      localProducts = localProducts.map(p => {
-          const shared = localSharedMap[p.id];
-          if (shared) {
-             return {
-                ...p,
-                _is_p2p: true,
-                _p2p_partnership_id: shared.partnership_id,
-                _p2p_owner_id: user.id,
-                _p2p_original_owner_id: user.id,
-                _p2p_creditor_id: shared.other_partner_id
-             };
-          }
-          return p;
-      });
-      
-      console.log("[DEBUG POS] Local P2P items:", localProducts.filter(p => p._is_p2p).length);
-
       // 2. Produtos importados do Hub
       let hubProducts: Product[] = [];
       const { data: hubImports } = await supabase
@@ -324,30 +279,7 @@ export default function POS() {
         });
       }
 
-      // 3. Produtos de Parcerias P2P (Compartilhados comigo)
-      let p2pProducts: Product[] = [];
-      const { data: rpcData, error: rpcError } = await supabase.rpc('get_my_p2p_shared_products', { p_tenant_id: user.id });
-      
-      if (!rpcError && rpcData) {
-         p2pProducts = rpcData.map((p: any) => ({
-            id: p.id,
-            name: `🤝 ${p.name}`,
-            sale_price: p.sale_price,
-            cost_price: p.cost_price,
-            image_url: p.image_url,
-            product_variants: p.variants || [],
-            _is_p2p: true,
-            _p2p_partnership_id: p.p2p_partnership_id,
-            _p2p_owner_id: p.p2p_owner_id,
-            _p2p_original_owner_id: p.p2p_owner_id,
-            _p2p_creditor_id: p.p2p_owner_id
-         }));
-      }
-
-      console.log("[DEBUG POS] Local:", localProducts.length, "Hub:", hubProducts.length, "P2P:", p2pProducts.length);
-      console.log("[DEBUG POS] P2P items:", p2pProducts);
-
-      return consolidateProducts([...localProducts, ...hubProducts, ...p2pProducts]) as Product[];
+      return consolidateProducts([...localProducts, ...hubProducts]) as Product[];
     }
   });
 
@@ -475,167 +407,110 @@ export default function POS() {
       const pm2 = hasSecondPayment && payment2Method && !isPartnerDirectReceive ? payMethods.find((p:any) => p.id === payment2Method) : null;
       const hasInstallments = !isPartnerDirectReceive && ((pm1?.is_installment && installments1.length > 0) || (pm2?.is_installment && installments2.length > 0));
 
-      // Separar logicamente o carrinho para Split
-      const localAndHubItems = cart.filter(c => !c._is_p2p);
-      const p2pItems = cart.filter(c => c._is_p2p);
-      
-      const orderGroups = [];
-      if (localAndHubItems.length > 0) {
-          orderGroups.push({ type: 'main', items: localAndHubItems, status: hasInstallments ? 'installment' : 'completed' });
-      }
-      if (p2pItems.length > 0) {
-          orderGroups.push({ type: 'p2p', items: p2pItems, status: hasInstallments ? 'p2p_pending_payment' : 'p2p_settlement' });
-      }
+      const saleStatus = hasInstallments ? 'installment' : 'completed';
 
-      const totalCartValue = cart.reduce((acc, c) => acc + (c.price * c.quantity), 0);
-      let firstSaleId = null;
+      // Calcular taxas das formas de pagamento (fee_percentage)
+      const fee1 = (!isPartnerDirectReceive && pm1 && !pm1.is_installment) ? (grandTotal * (Number(pm1.fee_percentage) || 0) / 100) : 0;
+      const fee2 = (!isPartnerDirectReceive && pm2 && !pm2.is_installment && payment2Amount) ? (payment2Amount * (Number(pm2.fee_percentage) || 0) / 100) : 0;
 
-      for (const group of orderGroups) {
-          const groupSubtotal = group.items.reduce((acc, c) => acc + (c.price * c.quantity), 0);
-          const ratio = totalCartValue > 0 ? groupSubtotal / totalCartValue : 0;
+      // Inserir venda
+      const { data: sale, error } = await supabase.from('sales').insert([{
+        owner_id: user.id,
+        total_amount: grandTotal,
+        discount: actualDiscount,
+        payment_method: payment1Method,
+        payment_method_2: (!isPartnerDirectReceive && hasSecondPayment && payment2Method) ? payment2Method : null,
+        payment_amount_2: isPartnerDirectReceive ? null : (hasSecondPayment ? payment2Amount : null),
+        payment_fee_amount: fee1,
+        payment_fee_amount_2: fee2,
+        status: saleStatus,
+        sale_origin: saleOrigin,
+        shipping_method: shippingMethod,
+        shipping_cost: shippingCost,
+        shipping_payer: shippingPayer,
+        discount_type: discountType,
+        customer_id: customer_id || null,
+        partner_point_id: checkoutPartnerPointId || null
+      }]).select('id').single();
 
-          const gTotalVal = grandTotal * ratio;
-          const gDiscount = actualDiscount * ratio;
-          const gShipping = shippingCost * ratio;
-          const gPayment2Am = hasSecondPayment && payment2Amount ? payment2Amount * ratio : null;
+      if (error) throw error;
+      const firstSaleId = sale.id;
 
-          // Calcular taxas das formas de pagamento (fee_percentage)
-          const p1Amount = hasSecondPayment ? (payment1Amount * ratio) : gTotalVal;
-          const fee1 = (!isPartnerDirectReceive && pm1 && !pm1.is_installment) ? (p1Amount * (Number(pm1.fee_percentage) || 0) / 100) : 0;
-          const fee2 = (!isPartnerDirectReceive && pm2 && !pm2.is_installment && gPayment2Am) ? (gPayment2Am * (Number(pm2.fee_percentage) || 0) / 100) : 0;
+      // Itens da Venda
+      const saleItemsData = cart.map(c => ({
+        owner_id: user.id,
+        sale_id: sale.id,
+        product_id: c.product_id,
+        variant_id: c.variant_id || null,
+        quantity: c.quantity,
+        unit_price: c.price,
+        unit_cost: c.cost_price,
+        total_price: c.price * c.quantity
+      }));
+      const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsData);
+      if (itemsError) throw itemsError;
 
-          // Inserir venda
-          const { data: sale, error } = await supabase.from('sales').insert([{
-            owner_id: user.id,
-            total_amount: gTotalVal,
-            discount: gDiscount,
-            payment_method: payment1Method,
-            payment_method_2: (!isPartnerDirectReceive && hasSecondPayment && payment2Method) ? payment2Method : null,
-            payment_amount_2: isPartnerDirectReceive ? null : gPayment2Am,
-            payment_fee_amount: fee1,
-            payment_fee_amount_2: fee2,
-            status: group.status,
-            sale_origin: saleOrigin,
-            shipping_method: shippingMethod,
-            shipping_cost: gShipping,
-            shipping_payer: shippingPayer,
-            discount_type: discountType,
-            customer_id: customer_id || null,
-            partner_point_id: checkoutPartnerPointId || null
-          }]).select('id').single();
-
-          if (error) throw error;
-          if (!firstSaleId) firstSaleId = sale.id;
-
-          // Itens da Venda
-          const saleItemsData = group.items.map(c => ({
-            owner_id: user.id,
-            sale_id: sale.id,
-            product_id: c.product_id,
-            variant_id: c.variant_id || null,
-            quantity: c.quantity,
-            unit_price: c.price,
-            unit_cost: c.cost_price,
-            total_price: c.price * c.quantity
-          }));
-          const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsData);
-          if (itemsError) throw itemsError;
-
-          // Se a origem foi Ponto Parceiro, vamos abater do estoque do parceiro
-          if (checkoutPartnerPointId && group.items.length > 0) {
-             for (const item of group.items) {
-                 // Fetch the current stock to deduct
-                 const { data: currentStock } = await supabase
-                   .from('partner_point_stock')
-                   .select('id, quantity')
-                   .eq('partner_point_id', checkoutPartnerPointId)
-                   .eq('product_id', item.product_id)
-                   .eq(item.variant_id ? 'variant_id' : 'variant_id', item.variant_id || null)
-                   .single();
-                 
-                 if (currentStock) {
-                    const newQty = Math.max(0, currentStock.quantity - item.quantity);
-                    if (newQty === 0) {
-                       await supabase.from('partner_point_stock').delete().eq('id', currentStock.id);
-                    } else {
-                       await supabase.from('partner_point_stock').update({ quantity: newQty }).eq('id', currentStock.id);
-                    }
-                 }
+      // Se a origem foi Ponto Parceiro, abater do estoque do parceiro
+      if (checkoutPartnerPointId && cart.length > 0) {
+         for (const item of cart) {
+             const { data: currentStock } = await supabase
+               .from('partner_point_stock')
+               .select('id, quantity')
+               .eq('partner_point_id', checkoutPartnerPointId)
+               .eq('product_id', item.product_id)
+               .eq(item.variant_id ? 'variant_id' : 'variant_id', item.variant_id || null)
+               .single();
+             
+             if (currentStock) {
+                const newQty = Math.max(0, currentStock.quantity - item.quantity);
+                if (newQty === 0) {
+                   await supabase.from('partner_point_stock').delete().eq('id', currentStock.id);
+                } else {
+                   await supabase.from('partner_point_stock').update({ quantity: newQty }).eq('id', currentStock.id);
+                }
              }
-          }
+         }
+      }
 
-          // Itens Hub: criar fulfillment orders
-          const groupHubItems = group.items.filter(c => c._is_hub);
-          for (const hubItem of groupHubItems) {
-            const customerName = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.name || 'Cliente') : (manualName || 'Cliente');
-            const customerPhone = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.phone || '') : (manualPhone || '');
-            const { error: fulfillErr } = await supabase.from('hub_fulfillment_orders').insert({
-              hub_product_id: hubItem._hub_product_id,
-              hub_variant_id: hubItem.variant_id || null,
-              supplier_id: hubItem._supplier_id,
-              tenant_id: user.id,
-              quantity: hubItem.quantity,
-              status: 'pending',
-              customer_name: customerName,
-              customer_phone: customerPhone,
-              customer_address: observations || null
-            });
-            if (fulfillErr) toast.error(`Erro envio hub: ${hubItem.name}`);
-          }
+      // Itens Hub: criar fulfillment orders
+      const hubItems = cart.filter(c => c._is_hub);
+      for (const hubItem of hubItems) {
+        const customerName = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.name || 'Cliente') : (manualName || 'Cliente');
+        const customerPhone = customerMode === 'registered' ? (customers.find((c:any) => c.id === selectedCustomerId)?.phone || '') : (manualPhone || '');
+        const { error: fulfillErr } = await supabase.from('hub_fulfillment_orders').insert({
+          hub_product_id: hubItem._hub_product_id,
+          hub_variant_id: hubItem.variant_id || null,
+          supplier_id: hubItem._supplier_id,
+          tenant_id: user.id,
+          quantity: hubItem.quantity,
+          status: 'pending',
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          customer_address: observations || null
+        });
+        if (fulfillErr) toast.error(`Erro envio hub: ${hubItem.name}`);
+      }
 
-          // Itens P2P: criar orders e (se não for pagamento pendente) settlements
-          const groupP2PItems = group.items.filter(c => c._is_p2p);
-          if (groupP2PItems.length > 0) {
-              const pIds = [...new Set(groupP2PItems.map(c => c._p2p_partnership_id).filter(Boolean))];
-              const { data: activePartnerships } = await supabase.from('partnerships').select('*').in('id', pIds as string[]);
-
-              const totalP2PRevenue = groupP2PItems.reduce((acc, c) => acc + c.price * c.quantity, 0);
-              const totalFees = fee1 + fee2;
-
-              for (const p2pItem of groupP2PItems) {
-                 const contract = activePartnerships?.find(p => p.id === p2pItem._p2p_partnership_id);
-                 if (!contract) continue;
-
-                 const originalOwnerId = p2pItem._p2p_original_owner_id || p2pItem._p2p_owner_id || user.id;
-                 const creditorId = p2pItem._p2p_creditor_id || p2pItem._p2p_owner_id || user.id;
-                 const isMyOwnProduct = originalOwnerId === user.id;
-
-                 const { data: pOrder, error: pOrderErr } = await supabase.from('partnership_orders').insert({
-                    partnership_id: contract.id,
-                    seller_id: user.id,
-                    owner_id: originalOwnerId,
-                    product_id: p2pItem.product_id,
-                    variant_id: p2pItem.variant_id,
-                    sale_id: sale.id,
-                    quantity: p2pItem.quantity,
-                    sale_price: p2pItem.price,
-                    status: isMyOwnProduct ? 'confirmed' : 'pending_confirmation',
-                    order_type: 'sale'
-                 });
-              }
-           }
-          
-          // Parcelas rateadas
-          if (pm1?.is_installment && installments1.length > 0) {
-            const instsToInsert = installments1.map((inst, index) => ({
-                sale_id: sale.id,
-                installment_number: index + 1,
-                due_date: inst.dueDate,
-                amount: inst.amount * ratio,
-                status: 'pending'
-            }));
-            await supabase.from('sale_installments').insert(instsToInsert);
-          }
-          if (hasSecondPayment && pm2?.is_installment && installments2.length > 0) {
-            const instsToInsert = installments2.map((inst, index) => ({
-                sale_id: sale.id,
-                installment_number: index + 1,
-                due_date: inst.dueDate,
-                amount: inst.amount * ratio,
-                status: 'pending'
-            }));
-            await supabase.from('sale_installments').insert(instsToInsert);
-          }
+      // Parcelas
+      if (pm1?.is_installment && installments1.length > 0) {
+        const instsToInsert = installments1.map((inst, index) => ({
+            sale_id: sale.id,
+            installment_number: index + 1,
+            due_date: inst.dueDate,
+            amount: inst.amount,
+            status: 'pending'
+        }));
+        await supabase.from('sale_installments').insert(instsToInsert);
+      }
+      if (hasSecondPayment && pm2?.is_installment && installments2.length > 0) {
+        const instsToInsert = installments2.map((inst, index) => ({
+            sale_id: sale.id,
+            installment_number: index + 1,
+            due_date: inst.dueDate,
+            amount: inst.amount,
+            status: 'pending'
+        }));
+        await supabase.from('sale_installments').insert(instsToInsert);
       }
 
       if (storeOrderId) {
@@ -706,11 +581,6 @@ export default function POS() {
            _is_hub: (variant as any)._is_hub ?? product._is_hub,
            _hub_product_id: (variant as any)._hub_product_id ?? product._hub_product_id,
            _supplier_id: (variant as any)._supplier_id ?? product._supplier_id,
-           _is_p2p: (variant as any)._is_p2p ?? product._is_p2p,
-           _p2p_partnership_id: (variant as any)._p2p_partnership_id ?? product._p2p_partnership_id,
-           _p2p_owner_id: (variant as any)._p2p_owner_id ?? product._p2p_owner_id,
-           _p2p_creditor_id: (variant as any)._p2p_creditor_id ?? product._p2p_creditor_id,
-           _p2p_original_owner_id: (variant as any)._p2p_original_owner_id ?? product._p2p_original_owner_id
        }]);
     }
   };
@@ -725,16 +595,9 @@ export default function POS() {
 
   const handleValidationBeforeCheckout = () => {
      if (cart.length === 0) return toast.error("Carrinho vazio");
-     const hasLocal = cart.some(c => !c._is_p2p);
-     const hasP2P = cart.some(c => c._is_p2p);
      
      if (saleOrigin === 'Ponto Parceiro' && !checkoutPartnerPointId) {
          return toast.error("Selecione abaixo o Ponto Parceiro no qual ocorreu a venda.");
-     }
-
-     if (hasLocal && hasP2P) {
-        setShowMixedCartWarning(true);
-        return;
      }
      
      checkoutMutation.mutate();
@@ -793,10 +656,8 @@ export default function POS() {
                               <p className="font-semibold text-sm text-gray-900">{p.name}</p>
                               <div className="flex flex-wrap gap-2">
                                  {av.length > 0 ? av.map(v => (
-                                    <Button key={v.id} variant="outline" size="sm" className={`h-7 text-xs px-2 ${(v as any)._is_p2p ? 'border-blue-300 bg-blue-50/50 hover:border-blue-500 hover:bg-blue-100/50 text-blue-700' : 'border-primary/30 hover:border-primary hover:bg-primary/5'}`} onClick={() => {addToCart(p,v); setSearch('');}}>
-                                       {(v as any)._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
+                                    <Button key={v.id} variant="outline" size="sm" className="h-7 text-xs px-2 border-primary/30 hover:border-primary hover:bg-primary/5" onClick={() => {addToCart(p,v); setSearch('');}}>
                                        {v.size}
-                                       {(v as any)._is_p2p && <span className="ml-1 text-[9px] text-blue-400">{(v as any)._p2p_original_owner_id === (v as any)._p2p_creditor_id ? '(Parceira)' : '(Meu)'}</span>}
                                        <span className="ml-1 text-[9px] opacity-50">({v.stock})</span>
                                     </Button>
                                  )) : <span className="text-[10px] text-red-500 border border-red-100 bg-red-50 px-2 py-1 rounded">Sem estoque</span>}
@@ -1183,40 +1044,7 @@ export default function POS() {
             </div>
         </div>
 
-        {/* Dialog Customizado de Carrinho Misto */}
-        <Dialog open={showMixedCartWarning} onOpenChange={setShowMixedCartWarning}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-yellow-600 font-bold mb-2">
-                 <AlertTriangle className="h-6 w-6" />
-                 Atenção: Carrinho Misto
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 text-sm text-slate-700 bg-yellow-50 p-4 rounded-lg border border-yellow-200 shadow-inner">
-              <p>
-                Seu carrinho possui <strong>produtos da sua loja</strong> misturados com <strong>produtos enviados de parceiras</strong> (P2P).
-              </p>
-              <p>
-                Para que seu caixa funcione de forma independente, o sistema irá automaticamente dividir esta transação em <strong>DOIS RECIBOS DIFERENTES</strong> lá no seu Histórico de Vendas.
-              </p>
-              <ul className="list-disc pl-5 space-y-2 text-[13px] font-medium text-slate-600">
-                 <li>O seu recibo (local) nascerá imediatamente como <span className="text-emerald-700 font-bold">Concluído</span>.</li>
-                 <li>O recibo da parceira nascerá temporariamente <span className="text-yellow-700 font-bold">Em Aberto</span> aguardando ela despachar/liberar.</li>
-              </ul>
-            </div>
-            <DialogFooter className="mt-2 flex gap-2">
-              <Button variant="outline" className="flex-1 border-slate-300" onClick={() => setShowMixedCartWarning(false)}>
-                 Cancelar
-              </Button>
-              <Button className="flex-1 bg-yellow-500 hover:bg-yellow-600 font-bold text-white shadow-md shadow-yellow-500/20" onClick={() => {
-                 setShowMixedCartWarning(false);
-                 checkoutMutation.mutate();
-              }}>
-                 Ok, Finalizar Venda!
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+
 
         {/* Ticket Release Dialog */}
         <Dialog open={!!releaseTicketUrl} onOpenChange={(open) => !open && setReleaseTicketUrl(null)}>

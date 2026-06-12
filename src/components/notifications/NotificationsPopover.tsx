@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { supabase } from "@/integrations/supabase/client"
 import { useAuth } from "@/hooks/useAuth"
-import { Bell, Check, Trash2, PackageOpen, Handshake, ShoppingBag, Truck, Info, Sparkles } from "lucide-react"
+import { Bell, Check, Trash2, PackageOpen, ShoppingBag, Truck, Info, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useNavigate } from "react-router-dom"
 
@@ -41,8 +41,6 @@ export default function NotificationsPopover() {
     // Agrupar por tipo para otimizar queries
     const bagNotifs = unread.filter(n => n.type === 'bag_answered' || n.type === 'bag_answered_with_exchange');
     const bazarNotifs = unread.filter(n => n.type === 'bazar_new_item');
-    const p2pNotifs = unread.filter(n => n.type === 'p2p_order_request');
-    const partnerNotifs = unread.filter(n => n.type === 'partnership_request');
 
     // Bolsas Consignadas: resolvida se status != 'pending_approval'
     if (bagNotifs.length > 0) {
@@ -63,30 +61,6 @@ export default function NotificationsPopover() {
       items?.forEach(item => {
         if (item.status !== 'pending') {
           const notif = bazarNotifs.find(n => n.related_entity_id === item.id);
-          if (notif) idsToMarkRead.push(notif.id);
-        }
-      });
-    }
-
-    // Pedidos P2P: resolvida se status != 'pending_confirmation'
-    if (p2pNotifs.length > 0) {
-      const orderIds = p2pNotifs.map(n => n.related_entity_id);
-      const { data: orders } = await supabase.from('partnership_orders').select('id, status').in('id', orderIds);
-      orders?.forEach(order => {
-        if (order.status !== 'pending_confirmation') {
-          const notif = p2pNotifs.find(n => n.related_entity_id === order.id);
-          if (notif) idsToMarkRead.push(notif.id);
-        }
-      });
-    }
-
-    // Parcerias: resolvida se status != 'pending'
-    if (partnerNotifs.length > 0) {
-      const partnerIds = partnerNotifs.map(n => n.related_entity_id);
-      const { data: partners } = await supabase.from('partnerships').select('id, status').in('id', partnerIds);
-      partners?.forEach(p => {
-        if (p.status !== 'pending') {
-          const notif = partnerNotifs.find(n => n.related_entity_id === p.id);
           if (notif) idsToMarkRead.push(notif.id);
         }
       });
@@ -121,10 +95,6 @@ export default function NotificationsPopover() {
 
   const getIcon = (type: string) => {
     switch (type) {
-      case 'p2p_order_request':
-      case 'p2p_order_approved':
-      case 'p2p_order_rejected': return <PackageOpen className="w-4 h-4 text-primary" />;
-      case 'partnership_request': return <Handshake className="w-4 h-4 text-emerald-500" />;
       case 'hub_order_update': return <Truck className="w-4 h-4 text-amber-500" />;
       case 'new_hub_product': return <ShoppingBag className="w-4 h-4 text-indigo-500" />;
       case 'bag_answered':
