@@ -197,16 +197,16 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct, inC
            </div>
         )}
 
-        {p._is_p2p && !isList && (
+        {p._is_partner && !isList && (
            <div className="absolute top-2 left-2 z-20">
-              <div className="bg-blue-600/90 backdrop-blur-sm text-white p-1.5 rounded-full shadow-sm" title="Produto de parceria">
-                 <LinkIcon className="h-3 w-3" />
+              <div className="bg-blue-600/90 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                 🤝 Parceria
               </div>
            </div>
         )}
 
         {hasAnyDeal && !isList && (
-           <div className={`absolute ${p._is_p2p ? 'top-8' : 'top-2'} left-2 z-20`}>
+           <div className={`absolute ${p._is_partner ? 'top-8' : 'top-2'} left-2 z-20`}>
               <div className="bg-gradient-to-r from-red-600 to-orange-500 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm uppercase tracking-wider animate-pulse">
                  <Flame className="h-3 w-3" /> Oportunidade
               </div>
@@ -276,7 +276,7 @@ function ProductCard({ p, isList, store, cart, onAddToCart, onSelectProduct, inC
                         title={isInConsignment ? 'Em malinha — entrar na fila de espera' : (v.sale_price && parseFloat(v.sale_price) > 0 ? `R$ ${parseFloat(v.sale_price).toFixed(2)}` : `R$ ${p.sale_price.toFixed(2)}`)}
                       >
                         {isInConsignment && <Clock className="h-3 w-3 mr-1 text-yellow-500" />}
-                        {!isInConsignment && v._is_p2p && <LinkIcon className="h-3 w-3 mr-1 text-blue-500" />}
+                        {!isInConsignment && (p as any)._is_partner && <span className="mr-1 text-[9px] text-blue-500">🤝</span>}
                         {isDeal && <Flame className="h-3 w-3 mr-0.5 text-red-500" />}
                         {v.size}
                         {isDeal && (
@@ -569,22 +569,32 @@ export default function PublicCatalog() {
     }
   });
 
-  // Carrega produtos vindos de parcerias P2P ativas
+  // Carrega produtos de parcerias ativas compartilhados com esta loja
   const { data: partnershipProducts = [] } = useQuery({
     queryKey: ['public-partnership-products', store?.owner_id],
     enabled: !!store?.owner_id,
     queryFn: async () => {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('get_my_p2p_shared_products', { p_tenant_id: store.owner_id });
-      
-      if (rpcError || !rpcData) return [];
+      // Buscar produtos compartilhados com o dono da loja via acordos ativos
+      const { data: shared } = await supabase
+        .from('partner_agreement_products')
+        .select(`
+          id, agreement_id, product_id, owner_id,
+          partner_agreements!inner(status),
+          products(id, name, description, sale_price, cost_price, image_url, image_url_2, image_url_3, video_url, category_id, subcategory_id,
+            categories(id, name), subcategories(id, name),
+            product_variants(id, size, color, stock, sale_price))
+        `)
+        .eq('shared_with_id', store!.owner_id)
+        .eq('partner_agreements.status', 'active');
 
-      return rpcData.map((p: any) => ({
-        ...p,
-        categories: p.category_name ? { id: p.category_id, name: p.category_name } : null,
-        subcategories: p.subcategory_name ? { id: p.subcategory_id, name: p.subcategory_name } : null,
-        product_variants: p.variants || [],
-        _is_p2p: true
-      }));
+      if (!shared) return [];
+      return shared
+        .filter((s: any) => s.products)
+        .map((s: any) => ({
+          ...s.products,
+          _is_partner: true,
+          _partner_agreement_id: s.agreement_id,
+        }));
     }
   });
 

@@ -23,6 +23,9 @@ type CartItem = {
   _is_hub?: boolean;
   _hub_product_id?: string;
   _supplier_id?: string;
+  _is_partner?: boolean;
+  _partner_agreement_id?: string;
+  _partner_stock_owner_id?: string;
 };
 
 export default function POS() {
@@ -283,6 +286,33 @@ export default function POS() {
     }
   });
 
+  // Produtos de parceiras ativas
+  const { data: partnerProducts = [] } = useQuery({
+    queryKey: ['partner-products-pos'],
+    queryFn: async () => {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) return [];
+      // Buscar produtos compartilhados comigo
+      const { data: shared } = await supabase
+        .from('partner_agreement_products')
+        .select(`
+          id, agreement_id, product_id, owner_id,
+          partner_agreements!inner(status),
+          products(id, name, sale_price, cost_price, image_url, product_variants(id, size, color, stock))
+        `)
+        .eq('shared_with_id', user.id)
+        .eq('partner_agreements.status', 'active');
+      if (!shared) return [];
+      return shared.map((s: any) => ({
+        ...s.products,
+        _is_partner: true,
+        _partner_agreement_id: s.agreement_id,
+        _partner_stock_owner_id: s.owner_id,
+        name: s.products?.name || 'Produto',
+      }));
+    }
+  });
+
   const { data: payMethods = [] } = useQuery({
     queryKey: ['payment-methods-pos'],
     queryFn: async () => {
@@ -450,6 +480,41 @@ export default function POS() {
       const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsData);
       if (itemsError) throw itemsError;
 
+      // Criar log de parceria para itens de produtos em parceria
+      const partnerItems = cart.filter(c => c._is_partner && c._partner_agreement_id);
+      for (const pItem of partnerItems) {
+        const grossProfit = (pItem.price * pItem.quantity) - (pItem.cost_price * pItem.quantity);
+        const fees = fee1 + fee2;
+        const feePerItem = partnerItems.length > 0 ? fees / cart.length * pItem.quantity : 0;
+        const netProfit = grossProfit - feePerItem;
+        await supabase.from('partner_sale_log').insert({
+          agreement_id: pItem._partner_agreement_id,
+          sale_id: sale.id,
+          seller_id: user.id,
+          stock_owner_id: pItem._partner_stock_owner_id || user.id,
+          product_id: pItem.product_id,
+          quantity: pItem.quantity,
+          sale_price: pItem.price * pItem.quantity,
+          cost_price: pItem.cost_price * pItem.quantity,
+          fees: parseFloat(feePerItem.toFixed(2)),
+          gross_profit: parseFloat(grossProfit.toFixed(2)),
+          net_profit: parseFloat(netProfit.toFixed(2)),
+        });
+        // Decrementar estoque da dona do produto
+        if (pItem._partner_stock_owner_id && pItem.variant_id) {
+          const { data: vData } = await supabase
+            .from('product_variants')
+            .select('id, stock')
+            .eq('id', pItem.variant_id)
+            .single();
+          if (vData) {
+            await supabase.from('product_variants')
+              .update({ stock: Math.max(0, vData.stock - pItem.quantity) })
+              .eq('id', pItem.variant_id);
+          }
+        }
+      }
+
       // Se a origem foi Ponto Parceiro, abater do estoque do parceiro
       if (checkoutPartnerPointId && cart.length > 0) {
          for (const item of cart) {
@@ -581,6 +646,9 @@ export default function POS() {
            _is_hub: (variant as any)._is_hub ?? product._is_hub,
            _hub_product_id: (variant as any)._hub_product_id ?? product._hub_product_id,
            _supplier_id: (variant as any)._supplier_id ?? product._supplier_id,
+           _is_partner: (product as any)._is_partner ?? false,
+           _partner_agreement_id: (product as any)._partner_agreement_id ?? undefined,
+           _partner_stock_owner_id: (product as any)._partner_stock_owner_id ?? undefined,
        }]);
     }
   };
@@ -603,9 +671,13 @@ export default function POS() {
      checkoutMutation.mutate();
   };
 
-  const filteredProducts = products.filter(p => {
+  const allProducts = [...products, ...partnerProducts.filter((pp: any) =>
+    !products.some((p: any) => p.id === pp.id)
+  )];
+
+  const filteredProducts = allProducts.filter((p: any) => {
      const matchesName = p.name.toLowerCase().includes(search.toLowerCase());
-     const hasStock = p.product_variants && p.product_variants.some(v => v.stock > 0);
+     const hasStock = p.product_variants && p.product_variants.some((v: any) => v.stock > 0);
      return matchesName && hasStock;
   });
   const totalItems = cart.reduce((acc, c) => acc + c.quantity, 0);
@@ -650,13 +722,18 @@ export default function POS() {
                      <div className="p-4 text-sm text-center text-gray-500">Nenhum produto encontrado.</div>
                    ) : (
                      filteredProducts.map(p => {
-                        const av = p.product_variants?.filter(v => v.stock > 0) || [];
+                        const av = p.product_variants?.filter((v: any) => v.stock > 0) || [];
                         return (
-                           <div key={p.id} className="p-3 border-b flex flex-col gap-2 hover:bg-gray-50">
-                              <p className="font-semibold text-sm text-gray-900">{p.name}</p>
+                           <div key={p.id} className={`p-3 border-b flex flex-col gap-2 hover:bg-gray-50 ${(p as any)._is_partner ? 'bg-blue-50/40' : ''}`}>
+                               <div className="flex items-center gap-2">
+                                 <p className="font-semibold text-sm text-gray-900">{p.name}</p>
+                                 {(p as any)._is_partner && (
+                                   <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-semibold">🤝 Parceria</span>
+                                 )}
+                               </div>
                               <div className="flex flex-wrap gap-2">
-                                 {av.length > 0 ? av.map(v => (
-                                    <Button key={v.id} variant="outline" size="sm" className="h-7 text-xs px-2 border-primary/30 hover:border-primary hover:bg-primary/5" onClick={() => {addToCart(p,v); setSearch('');}}>
+                                 {av.length > 0 ? av.map((v: any) => (
+                                    <Button key={v.id} variant="outline" size="sm" className={`h-7 text-xs px-2 ${(p as any)._is_partner ? 'border-blue-300 hover:border-blue-500 hover:bg-blue-50' : 'border-primary/30 hover:border-primary hover:bg-primary/5'}`} onClick={() => {addToCart(p as any,v); setSearch('');}}>
                                        {v.size}
                                        <span className="ml-1 text-[9px] opacity-50">({v.stock})</span>
                                     </Button>
@@ -682,21 +759,24 @@ export default function POS() {
                  ) : (
                    <div className="space-y-3">
                      {cart.map(c => (
-                       <div key={c.variant_id} className="bg-white p-3 py-2 rounded-lg border border-gray-200 shadow-sm text-sm flex gap-3 relative">
-                         <div className="flex-1 pr-6">
-                            <p className="font-bold text-gray-900">{c.name}</p>
-                            <p className="text-[11px] text-gray-500 mt-0.5">{c.variant_desc}</p>
-                            <div className="flex items-center justify-between mt-2">
-                               <p className="font-black text-emerald-600">R$ {(c.price * c.quantity).toFixed(2)}</p>
-                               <div className="flex items-center border border-gray-200 rounded-md">
-                                 <button className="px-2.5 py-1 text-gray-600 hover:bg-gray-100" onClick={() => updateQuantity(c.variant_id, c.quantity - 1, c.max_stock)}>-</button>
-                                 <span className="w-5 text-center text-xs font-bold border-x border-gray-200 py-1">{c.quantity}</span>
-                                 <button className="px-2.5 py-1 text-gray-600 hover:bg-gray-100" onClick={() => updateQuantity(c.variant_id, c.quantity + 1, c.max_stock)}>+</button>
-                               </div>
-                            </div>
-                         </div>
-                         <button className="absolute top-2 right-2 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" onClick={() => removeFromCart(c.variant_id)}><Trash2 className="h-4 w-4"/></button>
-                       </div>
+                        <div key={c.variant_id} className={`bg-white p-3 py-2 rounded-lg border shadow-sm text-sm flex gap-3 relative ${c._is_partner ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
+                          <div className="flex-1 pr-6">
+                             <div className="flex items-center gap-1.5">
+                               <p className="font-bold text-gray-900">{c.name}</p>
+                               {c._is_partner && <span className="text-[9px] bg-blue-100 text-blue-600 px-1 py-0.5 rounded font-semibold">🤝</span>}
+                             </div>
+                             <p className="text-[11px] text-gray-500 mt-0.5">{c.variant_desc}</p>
+                             <div className="flex items-center justify-between mt-2">
+                                <p className="font-black text-emerald-600">R$ {(c.price * c.quantity).toFixed(2)}</p>
+                                <div className="flex items-center border border-gray-200 rounded-md">
+                                  <button className="px-2.5 py-1 text-gray-600 hover:bg-gray-100" onClick={() => updateQuantity(c.variant_id, c.quantity - 1, c.max_stock)}>-</button>
+                                  <span className="w-5 text-center text-xs font-bold border-x border-gray-200 py-1">{c.quantity}</span>
+                                  <button className="px-2.5 py-1 text-gray-600 hover:bg-gray-100" onClick={() => updateQuantity(c.variant_id, c.quantity + 1, c.max_stock)}>+</button>
+                                </div>
+                             </div>
+                          </div>
+                          <button className="absolute top-2 right-2 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" onClick={() => removeFromCart(c.variant_id)}><Trash2 className="h-4 w-4"/></button>
+                        </div>
                      ))}
                    </div>
                  )}

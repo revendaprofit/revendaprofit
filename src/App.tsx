@@ -31,6 +31,8 @@ import BazarSellerSubmit from "./pages/BazarSellerSubmit";
 import BazarAdmin from "./pages/BazarAdmin";
 import Analytics from "./pages/Analytics";
 import WaitlistPage from "./pages/WaitlistPage";
+import PartnerAgreements from "./pages/PartnerAgreements";
+import PartnerSettlement from "./pages/PartnerSettlement";
 
 // Pages - Supplier
 import SupplierDashboard from "./pages/supplier/SupplierDashboard";
@@ -116,6 +118,8 @@ const AppRoutes = () => (
     <Route path="/partner-points/:id" element={<ProtectedRoute><AppLayout><PartnerPointDetail /></AppLayout></ProtectedRoute>} />
     <Route path="/bazar-admin" element={<ProtectedRoute><AppLayout><BazarAdmin /></AppLayout></ProtectedRoute>} />
     <Route path="/waitlist" element={<ProtectedRoute><AppLayout><WaitlistPage /></AppLayout></ProtectedRoute>} />
+    <Route path="/partner-agreements" element={<ProtectedRoute><AppLayout><PartnerAgreements /></AppLayout></ProtectedRoute>} />
+    <Route path="/partner-settlement" element={<ProtectedRoute><AppLayout><PartnerSettlement /></AppLayout></ProtectedRoute>} />
 
     {/* Supplier Routes */}
     <Route path="/supplier" element={<ProtectedRoute><AppLayout><SupplierDashboard /></AppLayout></ProtectedRoute>} />

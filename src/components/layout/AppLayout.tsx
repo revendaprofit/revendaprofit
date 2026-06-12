@@ -26,7 +26,9 @@ import {
   MapPin,
   Lock,
   Video,
-  LineChart
+  LineChart,
+  Handshake,
+  Calculator
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -113,6 +115,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     [
       { name: "Historico de Vendas", href: "/sales", icon: Receipt },
       { name: "Vendas a Prazo", href: "/installments", icon: Clock },
+    ],
+    [
+      { name: "Parcerias", href: "/partner-agreements", icon: Handshake },
+      { name: "Acerto de Contas", href: "/partner-settlement", icon: Calculator },
     ]
   ];
 
