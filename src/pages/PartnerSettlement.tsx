@@ -15,7 +15,7 @@ export default function PartnerSettlement() {
   const [selectedAgreementId, setSelectedAgreementId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('all');
   const [costPct, setCostPct] = useState('');
   const [profitPct, setProfitPct] = useState('');
 
@@ -253,9 +253,9 @@ export default function PartnerSettlement() {
               onChange={(e) => setStatusFilter(e.target.value as any)}
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
             >
+              <option value="all">Todos</option>
               <option value="pending">Pagamento Pendente</option>
               <option value="settled">Liquidado</option>
-              <option value="all">Concluído</option>
             </select>
           </div>
         </div>
