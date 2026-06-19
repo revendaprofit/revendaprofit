@@ -487,7 +487,7 @@ export default function POS() {
         const fees = fee1 + fee2;
         const feePerItem = partnerItems.length > 0 ? fees / cart.length * pItem.quantity : 0;
         const netProfit = grossProfit - feePerItem;
-        await supabase.from('partner_sale_log').insert({
+        const { error: logErr } = await supabase.from('partner_sale_log').insert({
           agreement_id: pItem._partner_agreement_id,
           sale_id: sale.id,
           seller_id: user.id,
@@ -500,6 +500,7 @@ export default function POS() {
           gross_profit: parseFloat(grossProfit.toFixed(2)),
           net_profit: parseFloat(netProfit.toFixed(2)),
         });
+        if (logErr) throw new Error(`Erro ao registrar log de parceria: ${logErr.message}`);
         // Decrementar estoque da dona do produto
         if (pItem._partner_stock_owner_id && pItem.variant_id) {
           const { data: vData } = await supabase
