@@ -224,12 +224,16 @@ export default function StockImportDialog() {
         const supText = mapping.supplier_text && firstRow[mapping.supplier_text] ? String(firstRow[mapping.supplier_text]).trim() : null;
         const subText = mapping.subcategory_text && firstRow[mapping.subcategory_text] ? String(firstRow[mapping.subcategory_text]).trim() : null;
 
+        const fileTotalStock = fileVariants.reduce((sum, v) => sum + v.stock, 0);
+        // Auto-detectar planilha toda zerada: forçar 'replace' para não fazer add+0=sem mudança
+        const allZeroInFile = fileVariants.length > 0 && fileVariants.every(v => v.stock === 0);
+
         items.push({
           fileName: name,
           fileCostPrice: cost,
           fileSalePrice: sale,
           fileVariants,
-          fileTotalStock: fileVariants.reduce((sum, v) => sum + v.stock, 0),
+          fileTotalStock,
           existingMatch: existingEntry ? {
             id: existingEntry.product.id,
             name: existingEntry.product.name,
@@ -242,7 +246,7 @@ export default function StockImportDialog() {
               sku: v.sku || null,
             })),
           } : null,
-          action: 'add', // Default: acrescentar (mais seguro)
+          action: (existingEntry && allZeroInFile) ? 'replace' : 'add', // Zeragem forçar replace
           categoryId: catText ? (categoryMap[catText] || null) : null,
           supplierId: supText ? (supplierMap[supText] || null) : null,
           subcategoryId: subText ? (subcategoryMap[subText] || null) : null,
@@ -365,11 +369,24 @@ export default function StockImportDialog() {
 
           // Update variants only if action is not ignore_stock
           if (item.action !== 'ignore_stock') {
+            // Quando 'replace': zerar variantes existentes que não aparecem na planilha
+            if (item.action === 'replace') {
+              for (const ev of existing.variants) {
+                const inFile = item.fileVariants.some(fv =>
+                  normalizeForComparison(fv.size) === normalizeForComparison(ev.size) &&
+                  normalizeForComparison(fv.color) === normalizeForComparison(ev.color)
+                );
+                if (!inFile) {
+                  await supabase.from('product_variants').update({ stock: 0 }).eq('id', ev.id);
+                }
+              }
+            }
+
             for (const fv of item.fileVariants) {
               // Find matching existing variant by size+color
               const normalizedSize = normalizeForComparison(fv.size);
               const normalizedColor = normalizeForComparison(fv.color);
-              
+
               const matchingVariant = existing.variants.find(ev =>
                 normalizeForComparison(ev.size) === normalizedSize &&
                 normalizeForComparison(ev.color) === normalizedColor
