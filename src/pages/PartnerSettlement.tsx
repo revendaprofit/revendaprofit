@@ -55,7 +55,8 @@ export default function PartnerSettlement() {
 
       if (startDate) q = q.gte('created_at', startDate);
       if (endDate) q = q.lte('created_at', endDate + 'T23:59:59');
-      if (statusFilter === 'pending') q = q.eq('settled', false);
+      // NULL também é tratado como pendente (registros sem settled explícito)
+      if (statusFilter === 'pending') q = q.or('settled.is.null,settled.eq.false');
       if (statusFilter === 'settled') q = q.eq('settled', true);
 
       const { data, error } = await q;

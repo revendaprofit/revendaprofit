@@ -515,6 +515,8 @@ export default function POS() {
           fees: parseFloat(feePerItem.toFixed(2)),
           gross_profit: parseFloat(grossProfit.toFixed(2)),
           net_profit: parseFloat(netProfit.toFixed(2)),
+          settled: false,
+          cancelled: false,
         });
         if (logErr) throw new Error(`Erro ao registrar log de parceria: ${logErr.message}`);
         // Decrementar estoque da dona do produto
