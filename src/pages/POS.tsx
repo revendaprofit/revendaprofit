@@ -517,6 +517,7 @@ export default function POS() {
           net_profit: parseFloat(netProfit.toFixed(2)),
           settled: false,
           cancelled: false,
+          status: 'pendente',
         });
         if (logErr) throw new Error(`Erro ao registrar log de parceria: ${logErr.message}`);
         // Decrementar estoque da dona do produto

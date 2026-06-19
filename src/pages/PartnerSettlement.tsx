@@ -51,8 +51,7 @@ export default function PartnerSettlement() {
         .select('*, products(name, image_url), sales!inner(status)')
         .eq('agreement_id', selectedAgreementId)
         .eq('cancelled', false)
-        // Sempre ocultar logs já incluídos em acertos anteriores
-        .or('settled.is.null,settled.eq.false')
+        .eq('status', 'pendente')
         .order('created_at', { ascending: false });
 
       if (startDate) q = q.gte('created_at', startDate);
@@ -114,7 +113,7 @@ export default function PartnerSettlement() {
   const settleMutation = useMutation({
     mutationFn: async () => {
       if (!user?.id || !selectedAgreementId) throw new Error('Dados inválidos');
-      const pendingIds = logs.filter((l: any) => !l.settled).map((l: any) => l.id);
+      const pendingIds = logs.filter((l: any) => l.status !== 'acerto_realizado').map((l: any) => l.id);
       const ag = selectedAgreement!;
       const isA = ag.user_a_id === user.id;
 
@@ -145,9 +144,11 @@ export default function PartnerSettlement() {
       });
       if (se) throw se;
 
-      // Marcar logs como liquidados
+      // Marcar logs como Acerto Realizado — bloqueio definitivo contra acerto duplo
       if (pendingIds.length > 0) {
-        await supabase.from('partner_sale_log').update({ settled: true }).in('id', pendingIds);
+        await supabase.from('partner_sale_log')
+          .update({ settled: true, status: 'acerto_realizado' })
+          .in('id', pendingIds);
       }
     },
     onSuccess: () => {
@@ -388,9 +389,9 @@ export default function PartnerSettlement() {
               <Button
                 className="w-full mt-4 bg-primary hover:bg-primary/90 text-white font-bold py-3"
                 onClick={() => settleMutation.mutate()}
-                disabled={settleMutation.isPending || (!costPct && !profitPct) || logs.filter((l:any)=>!l.settled).length === 0}
+                disabled={settleMutation.isPending || (!costPct && !profitPct) || logs.length === 0}
               >
-                {settleMutation.isPending ? 'Registrando...' : `Registrar Acerto e Concluir ${logs.filter((l:any)=>!l.settled).length} Vendas`}
+                {settleMutation.isPending ? 'Registrando...' : `Registrar Acerto e Concluir ${logs.length} Vendas`}
               </Button>
             </div>
           )}
