@@ -15,7 +15,7 @@ export default function PartnerSettlement() {
   const [selectedAgreementId, setSelectedAgreementId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'installment'>('all');
   const [costPct, setCostPct] = useState('');
   const [profitPct, setProfitPct] = useState('');
 
@@ -48,16 +48,17 @@ export default function PartnerSettlement() {
     queryFn: async () => {
       let q = supabase
         .from('partner_sale_log')
-        .select('*, products(name, image_url)')
+        .select('*, products(name, image_url), sales!inner(status)')
         .eq('agreement_id', selectedAgreementId)
         .eq('cancelled', false)
+        // Sempre ocultar logs já incluídos em acertos anteriores
+        .or('settled.is.null,settled.eq.false')
         .order('created_at', { ascending: false });
 
       if (startDate) q = q.gte('created_at', startDate);
       if (endDate) q = q.lte('created_at', endDate + 'T23:59:59');
-      // NULL também é tratado como pendente (registros sem settled explícito)
-      if (statusFilter === 'pending') q = q.or('settled.is.null,settled.eq.false');
-      if (statusFilter === 'settled') q = q.eq('settled', true);
+      // Filtrar pelo status da venda original (igual ao histórico de vendas)
+      if (statusFilter !== 'all') q = q.eq('sales.status', statusFilter);
 
       const { data, error } = await q;
       if (error) throw error;
@@ -254,8 +255,8 @@ export default function PartnerSettlement() {
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
             >
               <option value="all">Todos</option>
-              <option value="pending">Pagamento Pendente</option>
-              <option value="settled">Concluído</option>
+              <option value="completed">Concluída</option>
+              <option value="installment">Pagamento Pendente</option>
             </select>
           </div>
         </div>
