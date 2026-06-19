@@ -313,6 +313,22 @@ export default function POS() {
     }
   });
 
+  // Meus próprios produtos compartilhados em parcerias ativas
+  const { data: ownSharedMap = {} } = useQuery({
+    queryKey: ['own-shared-products-pos'],
+    queryFn: async () => {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) return {};
+      const { data } = await supabase
+        .from('partner_agreement_products')
+        .select('product_id, agreement_id, partner_agreements!inner(status)')
+        .eq('owner_id', user.id)
+        .eq('partner_agreements.status', 'active');
+      if (!data) return {};
+      return Object.fromEntries(data.map((s: any) => [s.product_id, s.agreement_id]));
+    }
+  });
+
   const { data: payMethods = [] } = useQuery({
     queryKey: ['payment-methods-pos'],
     queryFn: async () => {
@@ -672,9 +688,17 @@ export default function POS() {
      checkoutMutation.mutate();
   };
 
-  const allProducts = [...products, ...partnerProducts.filter((pp: any) =>
-    !products.some((p: any) => p.id === pp.id)
-  )];
+  const allProducts = [
+    ...products.map((p: any) => {
+      const agId = (ownSharedMap as any)[p.id];
+      if (agId) {
+        // Produto próprio compartilhado: gera log de parceria, mas sem desconto extra de estoque
+        return { ...p, _is_partner: true, _partner_agreement_id: agId, _partner_stock_owner_id: undefined };
+      }
+      return p;
+    }),
+    ...partnerProducts.filter((pp: any) => !products.some((p: any) => p.id === pp.id))
+  ];
 
   const filteredProducts = allProducts.filter((p: any) => {
      const matchesName = p.name.toLowerCase().includes(search.toLowerCase());
