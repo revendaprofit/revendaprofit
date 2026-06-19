@@ -292,7 +292,7 @@ export default function PartnerSettlement() {
           </div>
 
           {/* Calculadora */}
-          {(myLogs.length > 0 || partnerLogs.length > 0) && statusFilter !== 'settled' && (
+          {(myLogs.length > 0 || partnerLogs.length > 0) && (
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 text-white">
               <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
                 <Calculator className="h-5 w-5 text-primary" /> Calculadora do Acerto
