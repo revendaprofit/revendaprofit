@@ -255,7 +255,7 @@ export default function PartnerSettlement() {
             >
               <option value="all">Todos</option>
               <option value="pending">Pagamento Pendente</option>
-              <option value="settled">Liquidado</option>
+              <option value="settled">Concluído</option>
             </select>
           </div>
         </div>
