@@ -253,9 +253,9 @@ export default function PartnerSettlement() {
               onChange={(e) => setStatusFilter(e.target.value as any)}
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
             >
-              <option value="pending">Pendentes</option>
-              <option value="settled">Liquidados</option>
-              <option value="all">Todos</option>
+              <option value="pending">Pagamento Pendente</option>
+              <option value="settled">Liquidado</option>
+              <option value="all">Concluído</option>
             </select>
           </div>
         </div>
@@ -389,7 +389,7 @@ export default function PartnerSettlement() {
                 onClick={() => settleMutation.mutate()}
                 disabled={settleMutation.isPending || (!costPct && !profitPct) || logs.filter((l:any)=>!l.settled).length === 0}
               >
-                {settleMutation.isPending ? 'Registrando...' : `Registrar Acerto e Marcar ${logs.filter((l:any)=>!l.settled).length} Vendas como Liquidadas`}
+                {settleMutation.isPending ? 'Registrando...' : `Registrar Acerto e Concluir ${logs.filter((l:any)=>!l.settled).length} Vendas`}
               </Button>
             </div>
           )}
@@ -413,7 +413,7 @@ export default function PartnerSettlement() {
                     </div>
                     <div className="text-right">
                       <p className="font-bold text-slate-800">{fmt(s.net_amount)}</p>
-                      <p className="text-xs text-green-600">✅ Liquidado</p>
+                      <p className="text-xs text-green-600">✅ Concluído</p>
                     </div>
                   </div>
                 ))}
